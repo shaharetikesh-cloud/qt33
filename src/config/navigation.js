@@ -1,0 +1,240 @@
+export const navigationGroups = [
+  {
+    key: 'dashboard',
+    label: 'Dashboard',
+    items: [
+      {
+        to: '/',
+        label: 'Overview',
+        icon: 'overview',
+        section: 'Dashboard',
+        pageTitle: 'Overview',
+        breadcrumbs: ['Dashboard', 'Overview'],
+        keywords: ['overview', 'dashboard', 'home'],
+      },
+    ],
+  },
+  {
+    key: 'operations',
+    label: 'Operations',
+    items: [
+      {
+        to: '/daily-log',
+        label: 'Daily Log',
+        icon: 'dailyLog',
+        section: 'Operations',
+        pageTitle: 'Daily Log',
+        breadcrumbs: ['Operations', 'Daily Log', 'Entry'],
+        focusMode: true,
+        moduleKey: 'daily_log',
+        keywords: ['daily log', 'dlr', 'entry', 'hourly'],
+      },
+      {
+        to: '/battery',
+        label: 'Battery',
+        icon: 'battery',
+        section: 'Operations',
+        pageTitle: 'Battery Maintenance',
+        breadcrumbs: ['Operations', 'Battery', 'Entry'],
+        focusMode: true,
+        moduleKey: 'battery',
+        keywords: ['battery', 'maintenance', 'cells'],
+      },
+      {
+        to: '/faults',
+        label: 'Faults',
+        icon: 'faults',
+        section: 'Operations',
+        pageTitle: 'Fault Register',
+        breadcrumbs: ['Operations', 'Faults', 'Entry'],
+        focusMode: true,
+        moduleKey: 'faults',
+        keywords: ['fault', 'faults', 'register', 'trip'],
+      },
+      {
+        to: '/maintenance',
+        label: 'Maintenance',
+        icon: 'maintenance',
+        section: 'Operations',
+        pageTitle: 'Maintenance Register',
+        breadcrumbs: ['Operations', 'Maintenance'],
+        focusMode: true,
+        moduleKey: 'maintenance',
+        keywords: ['maintenance', 'work log'],
+      },
+      {
+        to: '/charge-handover',
+        label: 'Charge Handover',
+        icon: 'handover',
+        section: 'Operations',
+        pageTitle: 'Charge Handover',
+        breadcrumbs: ['Operations', 'Charge Handover'],
+        focusMode: true,
+        moduleKey: 'charge_handover',
+        keywords: ['charge handover', 'handover'],
+      },
+      {
+        to: '/history-register',
+        label: 'History Register',
+        icon: 'history',
+        section: 'Operations',
+        pageTitle: 'History Register',
+        breadcrumbs: ['Operations', 'History Register'],
+        moduleKey: 'history_register',
+        keywords: ['history', 'register', 'timeline'],
+      },
+    ],
+  },
+  {
+    key: 'reports',
+    label: 'Reports',
+    items: [
+      {
+        to: '/report-center',
+        label: 'Report Center',
+        icon: 'reports',
+        section: 'Reports',
+        pageTitle: 'Report Center',
+        breadcrumbs: ['Reports', 'Report Center'],
+        moduleKey: 'reports',
+        keywords: ['report center', 'monthly report', 'preview'],
+      },
+      {
+        to: '/month-end-pack',
+        label: 'Month-End Pack',
+        icon: 'pack',
+        section: 'Reports',
+        pageTitle: 'Month-End Pack',
+        breadcrumbs: ['Reports', 'Month-End Pack'],
+        moduleKey: 'reports',
+        keywords: ['month end pack', 'pack', 'export'],
+      },
+    ],
+  },
+  {
+    key: 'communication',
+    label: 'Communication',
+    items: [
+      {
+        to: '/notices',
+        label: 'Notice Board',
+        icon: 'notice',
+        section: 'Communication',
+        pageTitle: 'Notice Board',
+        breadcrumbs: ['Communication', 'Notice Board'],
+        moduleKey: 'notices',
+        keywords: ['notice', 'board', 'announcements'],
+      },
+      {
+        to: '/feedback',
+        label: 'Feedback',
+        icon: 'feedback',
+        section: 'Communication',
+        pageTitle: 'Feedback',
+        breadcrumbs: ['Communication', 'Feedback'],
+        moduleKey: 'feedback',
+        keywords: ['feedback', 'suggestion', 'issue'],
+      },
+    ],
+  },
+  {
+    key: 'administration',
+    label: 'Administration',
+    items: [
+      {
+        to: '/substations',
+        label: 'Substations',
+        icon: 'substation',
+        section: 'Administration',
+        pageTitle: 'Substations',
+        breadcrumbs: ['Administration', 'Substations'],
+        keywords: ['substations', 'stations'],
+      },
+      {
+        to: '/employees',
+        label: 'Employees',
+        icon: 'employees',
+        section: 'Administration',
+        pageTitle: 'Employees',
+        breadcrumbs: ['Administration', 'Employees'],
+        moduleKey: 'employees',
+        keywords: ['employees', 'staff'],
+      },
+      {
+        to: '/masters',
+        label: 'Masters',
+        icon: 'masters',
+        section: 'Administration',
+        pageTitle: 'Masters',
+        breadcrumbs: ['Administration', 'Masters'],
+        access: 'main_admin',
+        keywords: ['masters', 'settings', 'feeders'],
+      },
+      {
+        to: '/users',
+        label: 'Users',
+        icon: 'users',
+        section: 'Administration',
+        pageTitle: 'Users',
+        breadcrumbs: ['Administration', 'Users'],
+        access: 'user_manager',
+        keywords: ['users', 'accounts'],
+      },
+      {
+        to: '/audit',
+        label: 'Audit Trail',
+        icon: 'audit',
+        section: 'Administration',
+        pageTitle: 'Audit Trail',
+        breadcrumbs: ['Administration', 'Audit Trail'],
+        access: 'main_admin',
+        keywords: ['audit', 'trail', 'logs'],
+      },
+      {
+        to: '/session',
+        label: 'Session',
+        icon: 'session',
+        section: 'Administration',
+        pageTitle: 'Session',
+        breadcrumbs: ['Administration', 'Session'],
+        keywords: ['session', 'profile', 'account'],
+      },
+    ],
+  },
+]
+
+export const hiddenRouteItems = [
+  {
+    to: '/architecture',
+    label: 'Architecture',
+    icon: 'architecture',
+    section: 'Administration',
+    pageTitle: 'Architecture',
+    breadcrumbs: ['Administration', 'Architecture'],
+    access: 'main_admin',
+    keywords: ['architecture', 'system'],
+  },
+]
+
+export const allNavigationItems = [
+  ...navigationGroups.flatMap((group) =>
+    group.items.map((item) => ({
+      ...item,
+      groupKey: group.key,
+      groupLabel: group.label,
+    })),
+  ),
+  ...hiddenRouteItems.map((item) => ({
+    ...item,
+    groupKey: 'hidden',
+    groupLabel: item.section,
+  })),
+]
+
+export function findNavigationItem(pathname) {
+  return (
+    allNavigationItems.find((item) => item.to === pathname) ||
+    allNavigationItems.find((item) => pathname.startsWith(`${item.to}/`)) ||
+    allNavigationItems[0]
+  )
+}
