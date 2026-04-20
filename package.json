@@ -25,9 +25,7 @@
     "android:aab:release": "npm run build && npm run android:sync && cd android && gradlew.bat bundleRelease",
     "android:aab:release:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/bundle/release/app-release.aab'\"",
     "android:apk:offline": "node scripts/build-offline-apk.mjs",
-    "android:apk:offline:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/apk/debug/unified-msedcl-offline-debug.apk'\"",
-    "cf:deploy": "wrangler versions upload --assets=./dist",
-    "cf:deploy:npx": "npx wrangler versions upload --assets=./dist"
+    "android:apk:offline:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/apk/debug/unified-msedcl-offline-debug.apk'\""
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",
