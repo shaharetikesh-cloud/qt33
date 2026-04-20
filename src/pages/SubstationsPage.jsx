@@ -16,7 +16,14 @@ const emptyForm = {
 }
 
 export default function SubstationsPage() {
-  const { isMainAdmin, backendLabel } = useAuth()
+  const {
+    isMainAdmin,
+    isSubstationAdmin,
+    canManageUsers,
+    profile,
+    backendLabel,
+    refreshProfile,
+  } = useAuth()
   const [substations, setSubstations] = useState([])
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(true)
@@ -43,8 +50,14 @@ export default function SubstationsPage() {
           return
         }
 
+        const scopedSubstationId = String(profile?.substation_id || profile?.substationId || '').trim()
+        const visibleRows =
+          isSubstationAdmin && scopedSubstationId
+            ? data.filter((item) => item.id === scopedSubstationId)
+            : data
+
         startTransition(() => {
-          setSubstations(data)
+          setSubstations(visibleRows)
         })
       } catch (loadError) {
         if (active) {
@@ -62,7 +75,7 @@ export default function SubstationsPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [isSubstationAdmin, profile?.substation_id, profile?.substationId])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -71,9 +84,12 @@ export default function SubstationsPage() {
     setStatus('')
 
     try {
-      const created = await localCreateSubstation(form)
+      const created = await localCreateSubstation(form, profile)
       setForm(emptyForm)
       setStatus('Substation create zala.')
+      if (isSubstationAdmin) {
+        await refreshProfile()
+      }
       startTransition(() => {
         setSubstations((current) =>
           [...current, created].sort((left, right) =>
@@ -112,7 +128,7 @@ export default function SubstationsPage() {
         </section>
       ) : null}
 
-      {isMainAdmin ? (
+      {canManageUsers ? (
         <section className="content-card">
           <div className="section-heading">
             <div>
@@ -133,94 +149,103 @@ export default function SubstationsPage() {
             </div>
           ) : null}
 
-          <form className="form-stack" onSubmit={handleSubmit}>
-            <div className="details-grid">
-              <div>
-                <label htmlFor="substation-code">Code</label>
-                <input
-                  id="substation-code"
-                  value={form.code}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      code: event.target.value,
-                    }))
-                  }
-                  placeholder="e.g. 33KV-SELU"
-                />
-              </div>
-              <div>
-                <label htmlFor="substation-name">Substation name</label>
-                <input
-                  id="substation-name"
-                  value={form.name}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="substation-om">O&M</label>
-                <input
-                  id="substation-om"
-                  value={form.omName}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      omName: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="substation-subdivision">Sub Division</label>
-                <input
-                  id="substation-subdivision"
-                  value={form.subDivisionName}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      subDivisionName: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="substation-district">District</label>
-                <input
-                  id="substation-district"
-                  value={form.district}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      district: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="substation-circle">Circle</label>
-                <input
-                  id="substation-circle"
-                  value={form.circle}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      circle: event.target.value,
-                    }))
-                  }
-                />
-              </div>
+          {isSubstationAdmin && (profile?.substation_id || profile?.substationId) ? (
+            <div className="callout info-callout">
+              <p>
+                Tumcha substation scope already set aahe. Additional substation create karaycha
+                asel tar Main Admin contact kara.
+              </p>
             </div>
+          ) : (
+            <form className="form-stack" onSubmit={handleSubmit}>
+              <div className="details-grid">
+                <div>
+                  <label htmlFor="substation-code">Code</label>
+                  <input
+                    id="substation-code"
+                    value={form.code}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        code: event.target.value,
+                      }))
+                    }
+                    placeholder="e.g. 33KV-SELU"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="substation-name">Substation name</label>
+                  <input
+                    id="substation-name"
+                    value={form.name}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="substation-om">O&M</label>
+                  <input
+                    id="substation-om"
+                    value={form.omName}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        omName: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label htmlFor="substation-subdivision">Sub Division</label>
+                  <input
+                    id="substation-subdivision"
+                    value={form.subDivisionName}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        subDivisionName: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label htmlFor="substation-district">District</label>
+                  <input
+                    id="substation-district"
+                    value={form.district}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        district: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label htmlFor="substation-circle">Circle</label>
+                  <input
+                    id="substation-circle"
+                    value={form.circle}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        circle: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
 
-            <button type="submit" className="primary-button" disabled={saving}>
-              {saving ? 'Saving...' : 'Add substation'}
-            </button>
-          </form>
+              <button type="submit" className="primary-button" disabled={saving}>
+                {saving ? 'Saving...' : 'Add substation'}
+              </button>
+            </form>
+          )}
         </section>
       ) : null}
 

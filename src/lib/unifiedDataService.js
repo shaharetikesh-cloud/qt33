@@ -242,11 +242,14 @@ function mergeCollectionRecords(collection = [], incomingCollection = []) {
 }
 
 export function isAdminRole(role) {
-  return role === 'admin' || role === 'super_admin'
+  return role === 'admin' || role === 'super_admin' || role === 'substation_admin'
 }
 
 export function normalizeUserRole(role) {
-  return role === 'user' ? 'substation_user' : role || 'substation_user'
+  if (role === 'user') {
+    return 'substation_user'
+  }
+  return role || 'substation_user'
 }
 
 export function listMasterRecords(type) {
@@ -448,8 +451,17 @@ export async function deleteUserSubstationMapping(mappingId, actor) {
 export function getAllowedSubstationIds(profile) {
   const role = normalizeUserRole(profile?.role)
 
-  if (!profile || isAdminRole(role)) {
+  if (!profile) {
     return null
+  }
+
+  if (role === 'super_admin' || role === 'admin') {
+    return null
+  }
+
+  if (role === 'substation_admin') {
+    const scopedSubstationId = String(profile?.substation_id || profile?.substationId || '').trim()
+    return scopedSubstationId ? [scopedSubstationId] : []
   }
 
   if (Array.isArray(profile.allowed_substation_ids)) {
@@ -462,7 +474,9 @@ export function getAllowedSubstationIds(profile) {
 }
 
 export function assertSubstationAccess(profile, substationId) {
-  if (!substationId || !profile || isAdminRole(normalizeUserRole(profile?.role))) {
+  const role = normalizeUserRole(profile?.role)
+
+  if (!substationId || !profile || role === 'super_admin' || role === 'admin') {
     return
   }
 

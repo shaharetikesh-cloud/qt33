@@ -1,6 +1,11 @@
 import {
+  deleteApp,
+  initializeApp,
+} from 'firebase/app'
+import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
+  fetchSignInMethodsForEmail,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -8,6 +13,7 @@ import {
   updatePassword,
 } from 'firebase/auth'
 import { firebaseAuth } from './firebase'
+import { firebaseApp } from './firebase'
 import {
   idbDeleteRecord,
   idbListRecords,
@@ -51,12 +57,112 @@ function getProfileByFirebaseUid(uid) {
     .maybeSingle()
 }
 
+function normalizeRole(role) {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (normalized === 'super_admin' || normalized === 'substation_admin') {
+    return normalized
+  }
+  return normalized || 'normal_user'
+}
+
+function buildPlaceholderEmail(username) {
+  const normalized = String(username || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '')
+  const safe = normalized || `user-${Date.now()}`
+  return `${safe}@qt33.local`
+}
+
+async function getProfileByEmail(email) {
+  return supabase
+    .from('profiles')
+    .select('*')
+    .ilike('email', email)
+    .maybeSingle()
+}
+
+function getFallbackFullName(user) {
+  const raw = String(user?.displayName || user?.email || 'User').trim()
+  if (!raw.includes('@')) {
+    return raw || 'User'
+  }
+  return raw.split('@')[0] || 'User'
+}
+
+async function ensureProfileForFirebaseUser(user, options = {}) {
+  if (!supabase || !user?.uid) {
+    return null
+  }
+
+  const email = String(options.email || user.email || '').trim().toLowerCase()
+  const fullName = String(options.fullName || getFallbackFullName(user)).trim()
+  const role = String(options.role || 'normal_user').trim().toLowerCase()
+  const isActive = options.isActive === undefined ? true : Boolean(options.isActive)
+
+  const { data: uidProfile, error: uidProfileError } = await getProfileByFirebaseUid(user.uid)
+  if (uidProfileError) {
+    throw uidProfileError
+  }
+
+  if (uidProfile) {
+    return uidProfile
+  }
+
+  if (email) {
+    const { data: emailProfile, error: emailProfileError } = await getProfileByEmail(email)
+    if (emailProfileError) {
+      throw emailProfileError
+    }
+
+    if (emailProfile?.id) {
+      const patch = {
+        firebase_uid: user.uid,
+        auth_user_id: user.uid,
+        full_name: emailProfile.full_name || fullName,
+        role: emailProfile.role || role,
+        is_active: emailProfile.is_active ?? isActive,
+      }
+      const { data: updatedByEmail, error: updateError } = await supabase
+        .from('profiles')
+        .update(patch)
+        .eq('id', emailProfile.id)
+        .select('*')
+        .single()
+      if (updateError) {
+        throw updateError
+      }
+      return updatedByEmail
+    }
+  }
+
+  const insertRow = {
+    email,
+    firebase_uid: user.uid,
+    auth_user_id: user.uid,
+    full_name: fullName,
+    role,
+    is_active: isActive,
+  }
+  const { data: inserted, error: insertError } = await supabase
+    .from('profiles')
+    .insert(insertRow)
+    .select('*')
+    .single()
+
+  if (insertError) {
+    throw insertError
+  }
+
+  return inserted
+}
+
 export async function fetchLocalSession() {
   if (!firebaseAuth?.currentUser || !supabase) {
     return { session: null, profile: null }
   }
   const token = await getAuthToken()
-  const { data: profile } = await getProfileByFirebaseUid(firebaseAuth.currentUser.uid)
+  const profile = await ensureProfileForFirebaseUser(firebaseAuth.currentUser)
   return {
     session: { token, user: firebaseAuth.currentUser },
     profile: profile || null,
@@ -94,7 +200,7 @@ export async function localSignIn(credentials) {
 
   const result = await signInWithEmailAndPassword(firebaseAuth, email, credentials.password)
   const token = await result.user.getIdToken()
-  const { data: profile } = await getProfileByFirebaseUid(result.user.uid)
+  const profile = await ensureProfileForFirebaseUser(result.user)
   return { session: { token, user: result.user }, profile: profile || null }
 }
 
@@ -107,7 +213,6 @@ export async function localSignUp(payload) {
   const email = String(payload?.email || '').trim().toLowerCase()
   const password = String(payload?.password || '')
   const fullName = String(payload?.fullName || '').trim()
-  const phone = String(payload?.phone || '').trim()
   const requestedRole = String(payload?.requestedRole || '').trim().toLowerCase()
   const allowedRoles = ['super_admin', 'substation_admin']
 
@@ -123,41 +228,59 @@ export async function localSignUp(payload) {
     throw new Error('Signup madhye fakta Main Admin kiwa Substation Admin role select kara.')
   }
 
-  const authResult = await createUserWithEmailAndPassword(firebaseAuth, email, password)
-  const createdAtIso = new Date().toISOString()
-  const trialEndsAtIso = new Date(
-    Date.now() + 15 * 24 * 60 * 60 * 1000,
-  ).toISOString()
-
-  const { error: profileUpsertError } = await supabase
-    .from('profiles')
-    .upsert(
-      {
-        auth_user_id: authResult.user.uid,
-        firebase_uid: authResult.user.uid,
-        email,
-        full_name: fullName,
-        phone,
-        role: requestedRole,
-        is_active: false,
-        approval_status: 'pending',
-        module_permissions: {
-          subscription: {
-            status: 'trial',
-            trialStartedAt: createdAtIso,
-            trialEndsAt: trialEndsAtIso,
-            planCode: 'trial-15-days',
-          },
-        },
-      },
-      {
-        onConflict: 'auth_user_id',
-      },
+  const signInMethods = await fetchSignInMethodsForEmail(firebaseAuth, email)
+  if (Array.isArray(signInMethods) && signInMethods.length > 0) {
+    throw new Error(
+      'Ha email already register aahe. Krupaya Login kara kiwa Forgot Password vapra.',
     )
+  }
 
-  if (profileUpsertError) {
+  let authResult
+  try {
+    authResult = await createUserWithEmailAndPassword(firebaseAuth, email, password)
+  } catch (error) {
+    if (error?.code === 'auth/email-already-in-use') {
+      throw new Error(
+        'Ha email already register aahe. Krupaya Login kara kiwa Forgot Password vapra.',
+      )
+    }
+    throw error
+  }
+  const createdAtIso = new Date().toISOString()
+
+  const { data: existingProfile, error: existingProfileError } = await getProfileByEmail(email)
+  if (existingProfileError) {
     await signOut(firebaseAuth)
-    throw profileUpsertError
+    throw existingProfileError
+  }
+
+  const signupRole = requestedRole === 'super_admin' ? 'super_admin' : 'substation_admin'
+  const row = {
+    email,
+    full_name: fullName,
+    role: signupRole,
+    is_active: true,
+    firebase_uid: authResult.user.uid,
+    auth_user_id: authResult.user.uid,
+    updated_at: createdAtIso,
+  }
+
+  const saveQuery = existingProfile?.id
+    ? supabase.from('profiles').update(row).eq('id', existingProfile.id).select('*').single()
+    : supabase
+      .from('profiles')
+      .insert({
+        ...row,
+        created_at: createdAtIso,
+      })
+      .select('*')
+      .single()
+
+  const { error: profileSaveError } = await saveQuery
+
+  if (profileSaveError) {
+    await signOut(firebaseAuth)
+    throw profileSaveError
   }
 
   await signOut(firebaseAuth)
@@ -209,18 +332,55 @@ export async function localCreateUser(data) {
     return payload.user || payload
   }
 
+  if (!firebaseAuth || !supabase || !firebaseApp) {
+    throw new Error('Firebase/Supabase not configured.')
+  }
+
+  const username = String(data.username || '').trim()
+  const fullName = String(data.fullName || '').trim()
+  const password = String(data.password || '').trim()
+  const email = String(data.email || '').trim().toLowerCase() || buildPlaceholderEmail(username)
+  const role = normalizeRole(data.role)
+  const isActive = Boolean(data.isActive)
+
+  if (!username || !fullName || !password) {
+    throw new Error('Username, full name, ani password required aahe.')
+  }
+
+  if (password.length < 8) {
+    throw new Error('Password kamit kami 8 characters cha hava.')
+  }
+
+  const secondaryApp = initializeApp(firebaseApp.options, `admin-create-${Date.now()}`)
+  const secondaryAuth = getAuth(secondaryApp)
+  let createdAuthUser = null
+
+  try {
+    const result = await createUserWithEmailAndPassword(secondaryAuth, email, password)
+    createdAuthUser = result.user
+  } finally {
+    await deleteApp(secondaryApp)
+  }
+
+  if (!createdAuthUser?.uid) {
+    throw new Error('Firebase user create hou shakla nahi.')
+  }
+
   const profileRow = {
-    username: data.username,
-    full_name: data.fullName,
-    mobile: data.mobile,
-    role: data.role,
-    is_active: Boolean(data.isActive),
+    firebase_uid: createdAuthUser.uid,
+    auth_user_id: createdAuthUser.uid,
+    email,
+    full_name: fullName,
+    role,
+    is_active: isActive,
     substation_id: data.substationId || null,
-    module_permissions: { modules: { employees: { delete: Boolean(data.allowDelete) } } },
   }
   const { data: saved, error } = await supabase.from('profiles').insert(profileRow).select('*').single()
   if (error) throw error
-  return saved
+  return {
+    ...saved,
+    username,
+  }
 }
 
 export async function localUpdateUser(userId, data) {
@@ -341,10 +501,39 @@ export async function localSaveSettingsBundle(data) {
   return saved.payload || {}
 }
 
-export async function localCreateSubstation(data) {
+export async function localCreateSubstation(data, actor = null) {
   if (!supabase) throw new Error('Supabase not configured.')
   const { data: row, error } = await supabase.from('substations').insert(data).select('*').single()
   if (error) throw error
+
+  const actorRole = String(actor?.role || '').trim().toLowerCase()
+  const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
+  if (actorRole === 'substation_admin' && !actorSubstationId && row?.id) {
+    const actorEmail = String(actor?.email || '').trim().toLowerCase()
+    const actorUserId = String(actor?.auth_user_id || actor?.id || '').trim()
+    let updateResult = null
+
+    if (actorUserId) {
+      updateResult = await supabase
+        .from('profiles')
+        .update({ substation_id: row.id })
+        .eq('auth_user_id', actorUserId)
+        .select('id')
+    }
+
+    if ((!updateResult?.data || !updateResult.data.length) && actorEmail) {
+      updateResult = await supabase
+        .from('profiles')
+        .update({ substation_id: row.id })
+        .ilike('email', actorEmail)
+        .select('id')
+    }
+
+    if (updateResult?.error) {
+      throw updateResult.error
+    }
+  }
+
   return row
 }
 

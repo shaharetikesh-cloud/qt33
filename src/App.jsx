@@ -116,9 +116,9 @@ export default function App() {
             <Route
               path="masters"
               element={
-                <AdminOnlyPage>
+                <UserManagerPage>
                   <MastersPage />
-                </AdminOnlyPage>
+                </UserManagerPage>
               }
             />
             <Route path="substations" element={<SubstationsPage />} />

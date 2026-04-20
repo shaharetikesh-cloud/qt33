@@ -167,7 +167,7 @@ export const navigationGroups = [
         section: 'Administration',
         pageTitle: 'Masters',
         breadcrumbs: ['Administration', 'Masters'],
-        access: 'main_admin',
+        access: 'user_manager',
         keywords: ['masters', 'settings', 'feeders'],
       },
       {
