@@ -23,8 +23,10 @@ export const supabase =
         fetch: async (url, options = {}) => {
           const token = accessTokenProvider ? await accessTokenProvider() : ''
           const headers = new Headers(options.headers || {})
-          if (token) {
-            headers.set('Authorization', `Bearer ${token}`)
+          // Keep Supabase's default Authorization/apikey behavior.
+          // Firebase token is passed in a custom header for optional server-side bridging.
+          if (token && !headers.has('x-firebase-auth')) {
+            headers.set('x-firebase-auth', token)
           }
           return fetch(url, { ...options, headers })
         },
