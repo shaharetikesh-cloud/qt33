@@ -22,8 +22,10 @@ export const supabase =
       global: {
         fetch: async (url, options = {}) => {
           const token = accessTokenProvider ? await accessTokenProvider() : ''
-          const headers = { ...(options.headers || {}) }
-          if (token) headers.Authorization = `Bearer ${token}`
+          const headers = new Headers(options.headers || {})
+          if (token) {
+            headers.set('Authorization', `Bearer ${token}`)
+          }
           return fetch(url, { ...options, headers })
         },
       },
