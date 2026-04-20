@@ -1,0 +1,530 @@
+import {
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updatePassword,
+} from 'firebase/auth'
+import { firebaseAuth } from './firebase'
+import {
+  idbDeleteRecord,
+  idbListRecords,
+  idbPutRecord,
+  idbQueueDelete,
+  idbQueueUpsert,
+} from './indexedDb'
+import { getDeviceId } from './clientIdentity'
+import { supabase, supabaseConfigError } from './supabase'
+import { scheduleSync, syncScope, triggerSync } from './syncEngine'
+import { firebaseConfigError } from './firebase'
+
+async function getAuthToken() {
+  const user = firebaseAuth?.currentUser
+  if (!user) return ''
+  return user.getIdToken()
+}
+
+function isAdminFunctionsEnabled() {
+  return String(import.meta.env.VITE_SUPABASE_ADMIN_FUNCTIONS || '').toLowerCase() === 'true'
+}
+
+async function invokeAdminFunction(name, payload) {
+  if (!supabase) {
+    throw new Error('Supabase not configured.')
+  }
+  const { data, error } = await supabase.functions.invoke(name, {
+    body: payload,
+  })
+  if (error) {
+    throw error
+  }
+  return data || {}
+}
+
+function getProfileByFirebaseUid(uid) {
+  return supabase
+    .from('profiles')
+    .select('*')
+    .or(`firebase_uid.eq.${uid},auth_user_id.eq.${uid}`)
+    .maybeSingle()
+}
+
+export async function fetchLocalSession() {
+  if (!firebaseAuth?.currentUser || !supabase) {
+    return { session: null, profile: null }
+  }
+  const token = await getAuthToken()
+  const { data: profile } = await getProfileByFirebaseUid(firebaseAuth.currentUser.uid)
+  return {
+    session: { token, user: firebaseAuth.currentUser },
+    profile: profile || null,
+  }
+}
+
+export async function localSignIn(credentials) {
+  if (!firebaseAuth || !supabase) {
+    const issues = [firebaseConfigError, supabaseConfigError].filter(Boolean).join(' | ')
+    throw new Error(issues || 'Firebase/Supabase configuration incomplete.')
+  }
+  const identifier = String(credentials.identifier || credentials.username || credentials.email || '').trim()
+  if (!identifier) {
+    throw new Error('Email kiwa username required aahe.')
+  }
+
+  let email = identifier
+  if (!identifier.includes('@')) {
+    const { data: matchedProfile, error: lookupError } = await supabase
+      .from('profiles')
+      .select('email')
+      .ilike('username', identifier)
+      .maybeSingle()
+
+    if (lookupError) {
+      throw lookupError
+    }
+
+    if (!matchedProfile?.email) {
+      throw new Error('Ha username register zala nahi kiwa email map nahi.')
+    }
+
+    email = matchedProfile.email
+  }
+
+  const result = await signInWithEmailAndPassword(firebaseAuth, email, credentials.password)
+  const token = await result.user.getIdToken()
+  const { data: profile } = await getProfileByFirebaseUid(result.user.uid)
+  return { session: { token, user: result.user }, profile: profile || null }
+}
+
+export async function localSignUp(payload) {
+  if (!firebaseAuth || !supabase) {
+    const issues = [firebaseConfigError, supabaseConfigError].filter(Boolean).join(' | ')
+    throw new Error(issues || 'Firebase/Supabase configuration incomplete.')
+  }
+
+  const email = String(payload?.email || '').trim().toLowerCase()
+  const password = String(payload?.password || '')
+  const fullName = String(payload?.fullName || '').trim()
+  const phone = String(payload?.phone || '').trim()
+  const requestedRole = String(payload?.requestedRole || '').trim().toLowerCase()
+  const allowedRoles = ['super_admin', 'substation_admin']
+
+  if (!email || !password || !fullName) {
+    throw new Error('Full name, email, ani password required aahe.')
+  }
+
+  if (password.length < 8) {
+    throw new Error('Password kamit kami 8 characters cha hava.')
+  }
+
+  if (!allowedRoles.includes(requestedRole)) {
+    throw new Error('Signup madhye fakta Main Admin kiwa Substation Admin role select kara.')
+  }
+
+  const authResult = await createUserWithEmailAndPassword(firebaseAuth, email, password)
+  const createdAtIso = new Date().toISOString()
+  const trialEndsAtIso = new Date(
+    Date.now() + 15 * 24 * 60 * 60 * 1000,
+  ).toISOString()
+
+  const { error: profileUpsertError } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        auth_user_id: authResult.user.uid,
+        firebase_uid: authResult.user.uid,
+        email,
+        full_name: fullName,
+        phone,
+        role: requestedRole,
+        is_active: false,
+        approval_status: 'pending',
+        module_permissions: {
+          subscription: {
+            status: 'trial',
+            trialStartedAt: createdAtIso,
+            trialEndsAt: trialEndsAtIso,
+            planCode: 'trial-15-days',
+          },
+        },
+      },
+      {
+        onConflict: 'auth_user_id',
+      },
+    )
+
+  if (profileUpsertError) {
+    await signOut(firebaseAuth)
+    throw profileUpsertError
+  }
+
+  await signOut(firebaseAuth)
+  return {
+    message:
+      'Signup request submit zala. 15 divas trial start hoil approval nantar. Nantar paid subscription required asel.',
+  }
+}
+
+export async function localSignOut() {
+  if (!firebaseAuth) return
+  await signOut(firebaseAuth)
+}
+
+export async function localRequestPasswordReset(email) {
+  if (!firebaseAuth) throw new Error('Firebase not configured.')
+  await sendPasswordResetEmail(firebaseAuth, email)
+  return { message: 'Password reset email sent successfully.' }
+}
+
+export async function localUpdatePassword(newPassword) {
+  const user = firebaseAuth?.currentUser
+  if (!user) throw new Error('Session expired.')
+  await updatePassword(user, newPassword)
+  return { message: 'Password updated.' }
+}
+
+export async function localListUsers(filters = {}) {
+  if (!supabase) throw new Error('Supabase not configured.')
+  let query = supabase.from('profiles').select('*', { count: 'exact' }).order('updated_at', { ascending: false })
+  if (filters.role) query = query.eq('role', filters.role)
+  if (filters.status) query = query.eq('is_active', filters.status === 'active')
+  if (filters.substationId) query = query.eq('substation_id', filters.substationId)
+  if (filters.search) query = query.or(`full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,username.ilike.%${filters.search}%`)
+  const page = filters.page || 1
+  const pageSize = filters.pageSize || 20
+  query = query.range((page - 1) * pageSize, page * pageSize - 1)
+  const { data, count, error } = await query
+  if (error) throw error
+  return {
+    users: data ?? [],
+    pagination: { page, pageSize, total: count || 0, totalPages: Math.ceil((count || 0) / pageSize) || 1 },
+  }
+}
+
+export async function localCreateUser(data) {
+  if (isAdminFunctionsEnabled()) {
+    const payload = await invokeAdminFunction('admin-create-user', data)
+    return payload.user || payload
+  }
+
+  const profileRow = {
+    username: data.username,
+    full_name: data.fullName,
+    mobile: data.mobile,
+    role: data.role,
+    is_active: Boolean(data.isActive),
+    substation_id: data.substationId || null,
+    module_permissions: { modules: { employees: { delete: Boolean(data.allowDelete) } } },
+  }
+  const { data: saved, error } = await supabase.from('profiles').insert(profileRow).select('*').single()
+  if (error) throw error
+  return saved
+}
+
+export async function localUpdateUser(userId, data) {
+  const patch = {
+    username: data.username,
+    full_name: data.fullName,
+    mobile: data.mobile,
+    role: data.role,
+    is_active: Boolean(data.isActive),
+    substation_id: data.substationId || null,
+    module_permissions: { modules: { employees: { delete: Boolean(data.allowDelete) } } },
+  }
+  const { data: saved, error } = await supabase.from('profiles').update(patch).eq('id', userId).select('*').single()
+  if (error) throw error
+  return saved
+}
+
+export async function localDeleteUser(userId) {
+  if (isAdminFunctionsEnabled()) {
+    return invokeAdminFunction('admin-disable-user', { userId })
+  }
+
+  const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', userId)
+  if (error) throw error
+  return { message: 'User deactivated.' }
+}
+
+export async function localResetUserPassword(userId, temporaryPassword) {
+  if (isAdminFunctionsEnabled()) {
+    return invokeAdminFunction('admin-reset-user-password', {
+      userId,
+      temporaryPassword,
+    })
+  }
+
+  throw new Error(
+    'Set VITE_SUPABASE_ADMIN_FUNCTIONS=true and deploy admin-reset-user-password edge function.',
+  )
+}
+
+export async function localListLoginAudit() {
+  return []
+}
+
+export async function localListAppAuditEvents() {
+  return localListByScope('audit-events')
+}
+
+export async function localCreateAppAuditEvent(data) {
+  return localSaveByScope('audit-events', data)
+}
+
+export async function localGetDashboardSummary() {
+  const [substations, employees, notices, feedback] = await Promise.all([
+    localListSubstations(),
+    localListEmployees(),
+    localListNotices({ status: 'active' }),
+    localListFeedbackEntries({ status: 'open' }),
+  ])
+  return {
+    substations: substations.length,
+    employees: employees.length,
+    activeNotices: notices.length,
+    openFeedback: feedback.length,
+  }
+}
+
+export async function localGetSessionActivity() {
+  return { currentSession: null, activeSessions: [], recentLoginAudit: [], recentAppAudit: [] }
+}
+
+export async function localChangePassword(currentPassword, newPassword) {
+  const user = firebaseAuth?.currentUser
+  if (!user || !user.email) throw new Error('Session unavailable.')
+  const credential = EmailAuthProvider.credential(user.email, currentPassword)
+  await reauthenticateWithCredential(user, credential)
+  await updatePassword(user, newPassword)
+  return { message: 'Password updated.' }
+}
+
+export async function localListUserSubstationMappings() {
+  return localListByScope('user-substation-mappings')
+}
+
+export async function localSaveUserSubstationMapping(data) {
+  return localSaveByScope('user-substation-mappings', data)
+}
+
+export async function localDeleteUserSubstationMapping(mappingId) {
+  await localDeleteByScope('user-substation-mappings', mappingId)
+}
+
+export async function localListSubstations() {
+  if (!supabase) return localListByScope('substations')
+  const { data, error } = await supabase.from('substations').select('*').order('name', { ascending: true })
+  if (error) return localListByScope('substations')
+  return data ?? []
+}
+
+export async function localGetWorkspaceConfig() {
+  const [masters, settings] = await Promise.all([
+    localListByScope('workspace-masters'),
+    localListByScope('workspace-settings'),
+  ])
+  return { masters: masters[0]?.payload || {}, settings: settings[0]?.payload || {}, updatedAt: new Date().toISOString() }
+}
+
+export async function localSaveMasterRecord(type, data) {
+  return localSaveByScope(`masters:${type}`, data)
+}
+
+export async function localDeleteMasterRecord(type, recordId) {
+  await localDeleteByScope(`masters:${type}`, recordId)
+}
+
+export async function localSaveSettingsBundle(data) {
+  const saved = await localSaveByScope('workspace-settings', { id: 'default-settings', ...data })
+  return saved.payload || {}
+}
+
+export async function localCreateSubstation(data) {
+  if (!supabase) throw new Error('Supabase not configured.')
+  const { data: row, error } = await supabase.from('substations').insert(data).select('*').single()
+  if (error) throw error
+  return row
+}
+
+export async function localListEmployees(filters = {}) {
+  let rows = await localListByScope('employees')
+  if (filters.substationId) rows = rows.filter((item) => item.substation_id === filters.substationId)
+  if (filters.employeeType) rows = rows.filter((item) => item.employee_type === filters.employeeType)
+  if (filters.search) rows = rows.filter((item) => JSON.stringify(item).toLowerCase().includes(String(filters.search).toLowerCase()))
+  return rows
+}
+
+export async function localCreateEmployee(data) {
+  return localSaveByScope('employees', data)
+}
+
+export async function localUpdateEmployee(employeeId, data) {
+  return localSaveByScope('employees', { ...data, id: employeeId })
+}
+
+export async function localDeleteEmployee(employeeId) {
+  await localDeleteByScope('employees', employeeId)
+}
+
+export async function localListAttendanceSheets(filters = {}) {
+  return filterByObject(await localListByScope('attendance-sheets'), filters)
+}
+
+export async function localSaveAttendanceSheet(data) {
+  return localSaveByScope('attendance-sheets', data)
+}
+
+export async function localDeleteAttendanceSheet(documentId) {
+  await localDeleteByScope('attendance-sheets', documentId)
+}
+
+export async function localListDlrRecords(filters = {}) {
+  return filterByObject(await localListByScope('dlr-records'), filters)
+}
+
+export async function localSaveDlrRecord(data) {
+  return localSaveByScope('dlr-records', data)
+}
+
+export async function localDeleteDlrRecord(recordId) {
+  await localDeleteByScope('dlr-records', recordId)
+}
+
+export async function localListReportSnapshots(filters = {}) {
+  return filterByObject(await localListByScope('report-snapshots'), filters)
+}
+
+export async function localSaveReportSnapshot(data) {
+  return localSaveByScope('report-snapshots', data)
+}
+
+export async function localListNotices(filters = {}) {
+  return filterByObject(await localListByScope('notices'), filters)
+}
+
+export async function localSaveNotice(data) {
+  return localSaveByScope('notices', data)
+}
+
+export async function localDeleteNotice(noticeId) {
+  await localDeleteByScope('notices', noticeId)
+}
+
+export async function localListFeedbackEntries(filters = {}) {
+  return filterByObject(await localListByScope('feedback'), filters)
+}
+
+export async function localSaveFeedbackEntry(data) {
+  return localSaveByScope('feedback', data)
+}
+
+export async function localUpdateFeedbackEntry(feedbackId, data) {
+  return localSaveByScope('feedback', { ...data, id: feedbackId })
+}
+
+export async function localExportWorkspaceBackup() {
+  const scopes = [
+    'attendance-sheets', 'dlr-records', 'feedback', 'notices', 'report-snapshots',
+    'employees', 'user-substation-mappings', 'audit-events', 'workspace-masters', 'workspace-settings',
+  ]
+  const snapshot = {}
+  for (const scope of scopes) {
+    snapshot[scope] = await idbListRecords(scope)
+  }
+  return snapshot
+}
+
+export async function localImportWorkspaceBackup(snapshot) {
+  const entries = Object.entries(snapshot || {})
+  for (const [scope, records] of entries) {
+    for (const row of records || []) {
+      await idbPutRecord(scope, row)
+      await idbQueueUpsert(scope, row)
+    }
+  }
+  await triggerSync()
+  return { ok: true }
+}
+
+export function clearLocalSession() {
+  // Firebase SDK session persistence handles sign-out state.
+}
+
+export function getLocalSessionToken() {
+  return ''
+}
+
+export function hasLocalRecoveryToken() {
+  return false
+}
+
+function normalizeRecord(data) {
+  const id = data.id || crypto.randomUUID()
+  const updated_at = data.updated_at || data.updatedAt || new Date().toISOString()
+  const device_id = data.device_id || getDeviceId()
+  const updated_by = data.updated_by || firebaseAuth?.currentUser?.uid || ''
+  return {
+    id,
+    payload: data,
+    entity_type: data.entity_type || '',
+    operation_type: data.operation_type || (data.createdAt ? 'update' : 'create'),
+    sync_status: 'pending',
+    retry_count: 0,
+    last_error: '',
+    updated_at,
+    client_updated_at: updated_at,
+    base_server_updated_at: data.base_server_updated_at || data.server_received_at || '',
+    device_id,
+    updated_by,
+  }
+}
+
+async function localSaveByScope(scope, data) {
+  const existingRows = await idbListRecords(scope)
+  const existing = existingRows.find((item) => item.id === (data.id || ''))
+  const record = normalizeRecord({
+    ...data,
+    entity_type: scope,
+    operation_type: existing ? 'update' : 'create',
+    base_server_updated_at: existing?.server_received_at || existing?.updated_at || '',
+  })
+  await idbPutRecord(scope, record)
+  await idbQueueUpsert(scope, record)
+  scheduleSync()
+  return { ...record.payload, id: record.id, updatedAt: record.updated_at, updated_at: record.updated_at }
+}
+
+async function localDeleteByScope(scope, id) {
+  const updatedAt = new Date().toISOString()
+  await idbDeleteRecord(scope, id)
+  await idbQueueDelete(scope, id, updatedAt, getDeviceId(), firebaseAuth?.currentUser?.uid || '')
+  scheduleSync()
+}
+
+async function localListByScope(scope) {
+  if (supabase && navigator.onLine) {
+    await syncScope(scope)
+  }
+  const records = await idbListRecords(scope)
+  return records
+    .filter((row) => !row.deleted)
+    .map((row) => ({
+      ...row.payload,
+      id: row.id,
+      updated_at: row.updated_at,
+      updatedAt: row.updated_at,
+      device_id: row.device_id || row.payload?.device_id || '',
+      updated_by: row.updated_by || row.payload?.updated_by || '',
+      client_updated_at: row.client_updated_at || row.updated_at,
+      server_received_at: row.server_received_at || row.updated_at,
+      version: row.version || 1,
+    }))
+}
+
+function filterByObject(collection, filters) {
+  return collection.filter((item) =>
+    Object.entries(filters || {}).every(([key, value]) => !value || item[key] === value || String(item[key] || '').startsWith(String(value))),
+  )
+}

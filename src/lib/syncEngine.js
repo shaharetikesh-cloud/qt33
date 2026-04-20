@@ -1,0 +1,343 @@
+import {
+  idbDeleteOutboxItem,
+  idbGetMeta,
+  idbGetSyncCounts,
+  idbListPendingOutbox,
+  idbPutRecord,
+  idbSetMeta,
+  idbUpdateOutboxStatus,
+} from './indexedDb'
+import { supabase } from './supabase'
+
+const listeners = new Set()
+let syncInFlight = false
+let syncTimer = null
+
+const syncState = {
+  online: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  pending: 0,
+  failed: 0,
+  synced: 0,
+  syncing: false,
+  conflicts: 0,
+  lastSyncAt: '',
+}
+
+function emitSyncState() {
+  for (const listener of listeners) {
+    listener({ ...syncState })
+  }
+}
+
+export function emitSyncStateSnapshot() {
+  emitSyncState()
+}
+
+export function setOnlineState(nextOnline) {
+  syncState.online = Boolean(nextOnline)
+}
+
+async function refreshCounters() {
+  const counts = await idbGetSyncCounts()
+  syncState.pending = counts.pending
+  syncState.failed = counts.failed
+  syncState.synced = counts.synced
+  emitSyncState()
+}
+
+function listChangedFields(current = {}, incoming = {}) {
+  const fields = new Set([...Object.keys(current), ...Object.keys(incoming)])
+  return [...fields].filter((field) => JSON.stringify(current[field]) !== JSON.stringify(incoming[field]))
+}
+
+async function detectAndMergeConflict(existing, operation) {
+  const existingPayload = existing?.payload || {}
+  const incomingPayload = operation.payload || {}
+  const changedFields = listChangedFields(existingPayload, incomingPayload)
+  if (!existing) {
+    return { conflict: false, mergedPayload: incomingPayload, mergedVersion: 1 }
+  }
+
+  const staleByServerTime =
+    operation.base_server_updated_at &&
+    existing.updated_at &&
+    new Date(existing.updated_at).getTime() > new Date(operation.base_server_updated_at).getTime()
+
+  if (!staleByServerTime) {
+    return {
+      conflict: false,
+      mergedPayload: { ...existingPayload, ...incomingPayload },
+      mergedVersion: Number(existing.version || 0) + 1,
+    }
+  }
+
+  const serverMeta = existingPayload.__sync_meta || {}
+  const serverDevice = serverMeta.device_id || existing.device_id || ''
+  const overlap = changedFields.filter((field) => field !== '__sync_meta')
+
+  if (!overlap.length || serverDevice === operation.device_id) {
+    return {
+      conflict: false,
+      mergedPayload: { ...existingPayload, ...incomingPayload },
+      mergedVersion: Number(existing.version || 0) + 1,
+    }
+  }
+
+  return { conflict: true, mergedPayload: null, mergedVersion: Number(existing.version || 1) }
+}
+
+async function applyUpsert(operation) {
+  const scope = operation.entity_type || operation.scope
+  const { data: existing } = await supabase
+    .from('erp_records')
+    .select('id, payload, updated_at, version, device_id')
+    .eq('id', operation.id)
+    .maybeSingle()
+
+  const mergeResult = await detectAndMergeConflict(existing, operation)
+  if (mergeResult.conflict) {
+    syncState.conflicts += 1
+    await idbUpdateOutboxStatus(operation.queue_id, 'failed', {
+      retry_count: operation.retry_count || 0,
+      last_error: 'Conflict detected: newer server write exists on overlapping fields.',
+      next_retry_at: Date.now() + 5 * 60 * 1000,
+    })
+    return { applied: false, conflict: true }
+  }
+
+  const payload = {
+    ...mergeResult.mergedPayload,
+    __sync_meta: {
+      ...(mergeResult.mergedPayload?.__sync_meta || {}),
+      updated_by: operation.updated_by || '',
+      device_id: operation.device_id || '',
+      client_updated_at: operation.client_updated_at || operation.updated_at,
+      base_server_updated_at: operation.base_server_updated_at || '',
+      operation_type: operation.operation_type,
+    },
+  }
+  const row = {
+    id: operation.id,
+    scope,
+    payload,
+    updated_at: operation.updated_at,
+    client_updated_at: operation.client_updated_at || operation.updated_at,
+    updated_by: operation.updated_by || null,
+    device_id: operation.device_id || null,
+    substation_id: payload.substationId || payload.substation_id || null,
+    owner_user_id: payload.ownerUserId || payload.owner_user_id || null,
+    version: mergeResult.mergedVersion,
+    deleted: false,
+  }
+  const { error } = await supabase.from('erp_records').upsert(row, { onConflict: 'id' })
+  if (error) throw error
+  return { applied: true, conflict: false }
+}
+
+async function applyDelete(operation) {
+  const scope = operation.entity_type || operation.scope
+  const { error } = await supabase
+    .from('erp_records')
+    .upsert(
+      {
+        id: operation.id,
+        scope,
+        payload: {},
+        updated_at: operation.updated_at,
+        client_updated_at: operation.client_updated_at || operation.updated_at,
+        updated_by: operation.updated_by || null,
+        device_id: operation.device_id || null,
+        deleted: true,
+      },
+      { onConflict: 'id' },
+    )
+  if (error) throw error
+}
+
+function nextBackoffDelayMs(retryCount) {
+  const base = 1000
+  const max = 2 * 60 * 1000
+  return Math.min(base * (2 ** retryCount), max)
+}
+
+export function scheduleSync(delayMs = 350) {
+  if (syncTimer) {
+    clearTimeout(syncTimer)
+  }
+  syncTimer = setTimeout(() => {
+    syncTimer = null
+    void triggerSync()
+  }, delayMs)
+}
+
+export async function triggerSync() {
+  if (!supabase || syncInFlight || !syncState.online) {
+    return
+  }
+
+  syncInFlight = true
+  syncState.syncing = true
+  emitSyncState()
+  try {
+    const operations = await idbListPendingOutbox(120)
+    for (const operation of operations) {
+      try {
+        if (operation.operation_type === 'delete') {
+          await applyDelete(operation)
+        } else {
+          const result = await applyUpsert(operation)
+          if (result.conflict) {
+            continue
+          }
+          await idbPutRecord(operation.entity_type || operation.scope, {
+            id: operation.id,
+            payload: operation.payload,
+            sync_status: 'synced',
+            updated_at: operation.updated_at,
+            client_updated_at: operation.client_updated_at,
+            updated_by: operation.updated_by,
+            device_id: operation.device_id,
+            deleted: false,
+          })
+        }
+        await idbDeleteOutboxItem(operation.queue_id)
+      } catch (error) {
+        const retryCount = (operation.retry_count || 0) + 1
+        const delay = nextBackoffDelayMs(retryCount)
+        await idbUpdateOutboxStatus(
+          operation.queue_id,
+          retryCount >= 8 ? 'failed' : 'pending',
+          {
+            retry_count: retryCount,
+            next_retry_at: Date.now() + delay,
+            last_error: error instanceof Error ? error.message : 'Sync failed',
+          },
+        )
+      }
+    }
+
+    await pullServerUpdatesIncremental()
+    syncState.lastSyncAt = new Date().toISOString()
+  } finally {
+    syncInFlight = false
+    syncState.syncing = false
+    await refreshCounters()
+  }
+}
+
+async function pullServerUpdatesIncremental() {
+  if (!supabase || !syncState.online) {
+    return
+  }
+  const scopes = [
+    'attendance-sheets',
+    'dlr-records',
+    'feedback',
+    'notices',
+    'report-snapshots',
+    'employees',
+    'user-substation-mappings',
+    'workspace-masters',
+    'workspace-settings',
+    'audit-events',
+  ]
+
+  for (const scope of scopes) {
+    let cursor = await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z')
+    let keepFetching = true
+    while (keepFetching) {
+      const { data, error } = await supabase
+        .from('erp_records')
+        .select('id, scope, payload, deleted, updated_at, client_updated_at, updated_by, device_id, version')
+        .eq('scope', scope)
+        .gt('updated_at', cursor)
+        .order('updated_at', { ascending: true })
+        .limit(300)
+      if (error || !data?.length) {
+        keepFetching = false
+        continue
+      }
+
+      for (const row of data) {
+        await idbPutRecord(scope, {
+          id: row.id,
+          payload: row.payload || {},
+          sync_status: 'synced',
+          updated_at: row.updated_at,
+          client_updated_at: row.client_updated_at || row.updated_at,
+          server_received_at: row.updated_at,
+          updated_by: row.updated_by || '',
+          device_id: row.device_id || '',
+          version: row.version || 1,
+          deleted: Boolean(row.deleted),
+        })
+      }
+
+      cursor = data[data.length - 1].updated_at
+      await idbSetMeta(`sync_cursor:${scope}`, cursor)
+      keepFetching = data.length === 300
+    }
+  }
+}
+
+export async function syncScope(scope) {
+  if (!supabase || !syncState.online) {
+    return
+  }
+  const cursor = await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z')
+  const { data } = await supabase
+    .from('erp_records')
+    .select('id, scope, payload, deleted, updated_at, client_updated_at, updated_by, device_id, version')
+    .eq('scope', scope)
+    .gt('updated_at', cursor)
+    .order('updated_at', { ascending: true })
+    .limit(300)
+  for (const row of data || []) {
+    await idbPutRecord(scope, {
+      id: row.id,
+      payload: row.payload || {},
+      sync_status: 'synced',
+      updated_at: row.updated_at,
+      client_updated_at: row.client_updated_at || row.updated_at,
+      server_received_at: row.updated_at,
+      updated_by: row.updated_by || '',
+      device_id: row.device_id || '',
+      version: row.version || 1,
+      deleted: Boolean(row.deleted),
+    })
+  }
+  if (data?.length) {
+    await idbSetMeta(`sync_cursor:${scope}`, data[data.length - 1].updated_at)
+  }
+}
+
+export function subscribeSyncState(listener) {
+  listeners.add(listener)
+  listener({ ...syncState })
+  return () => listeners.delete(listener)
+}
+
+export async function initializeSyncEngine() {
+  syncState.online = typeof navigator !== 'undefined' ? navigator.onLine : true
+  await refreshCounters()
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.addEventListener('online', () => {
+    syncState.online = true
+    emitSyncState()
+    scheduleSync(50)
+  })
+  window.addEventListener('offline', () => {
+    syncState.online = false
+    emitSyncState()
+  })
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      scheduleSync(80)
+    }
+  })
+  if (syncState.online) {
+    scheduleSync(50)
+  }
+}
