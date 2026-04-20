@@ -1,0 +1,356 @@
+// ignore_for_file: deprecated_member_use
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qt33/src/data/module_record_repository.dart';
+import 'package:qt33/src/data/providers.dart';
+
+class ReportCenterMobilePage extends ConsumerStatefulWidget {
+  const ReportCenterMobilePage({super.key});
+
+  @override
+  ConsumerState<ReportCenterMobilePage> createState() => _ReportCenterMobilePageState();
+}
+
+class _ReportCenterMobilePageState extends ConsumerState<ReportCenterMobilePage> {
+  final _month = TextEditingController(text: DateTime.now().toIso8601String().substring(0, 7));
+  String _substationId = '';
+  String _reportKey = 'monthlyConsumption';
+  List<Map<String, dynamic>> _substations = [];
+  List<Map<String, dynamic>> _feeders = [];
+  bool _loading = true;
+
+  static const _reportOptions = [
+    ('monthlyConsumption', 'Monthly Consumption'),
+    ('dailyMinMaxSummary', 'Daily Min/Max Summary'),
+    ('monthlyMinMax', 'Monthly Min/Max'),
+    ('monthlyInterruption', 'Monthly Interruption'),
+    ('monthlyEnergyBalance', 'Monthly Energy Balance / Loss'),
+    ('feederLoadTrend', 'Feeder Load Trend'),
+    ('abnormalConsumption', 'Abnormal Consumption'),
+    ('eventImpact', 'Event Impact'),
+    ('dataCompleteness', 'Data Completeness'),
+    ('mainIncReconciliation', 'Main INC vs Child Reconciliation'),
+  ];
+  int _dailyLog = 0;
+  int _faults = 0;
+  int _maintenance = 0;
+  int _battery = 0;
+  int _handover = 0;
+  List<Map<String, String>> _detailRows = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    setState(() => _loading = true);
+    final ws = ref.read(workspaceRepositoryProvider);
+    _substations = await ws.listSubstations();
+    _feeders = await ws.listMasterRecords('feeders');
+    if (_substationId.isEmpty && _substations.isNotEmpty) {
+      _substationId = _substations.first['id']?.toString() ?? '';
+    }
+    await _computeCounts();
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
+
+  Future<void> _computeCounts() async {
+    final repo = ref.read(moduleRecordRepositoryProvider);
+    final daily = await repo.listByModule('daily_log');
+    final faults = <ModuleRecord>[...await repo.listByModule('fault'), ...await repo.listByModule('faults')];
+    final maintenance = await repo.listByModule('maintenance');
+    final battery = await repo.listByModule('battery');
+    final handover = await repo.listByModule('charge_handover');
+    final monthPrefix = _month.text.trim();
+    bool inScope(ModuleRecord r) {
+      final dateText = _extractDate(r);
+      return (r.substationId ?? '') == _substationId && dateText.startsWith(monthPrefix);
+    }
+
+    _dailyLog = daily.where(inScope).length;
+    _faults = faults.where(inScope).length;
+    _maintenance = maintenance.where(inScope).length;
+    _battery = battery.where(inScope).length;
+    _handover = handover.where(inScope).length;
+    _detailRows = _buildDetails(
+      daily.where(inScope).toList(growable: false),
+      faults.where(inScope).toList(growable: false),
+      maintenance.where(inScope).toList(growable: false),
+      battery.where(inScope).toList(growable: false),
+      handover.where(inScope).toList(growable: false),
+    );
+  }
+
+  Future<void> _shareSummary() async {
+    final sub = _substations.where((s) => s['id']?.toString() == _substationId).firstOrNull;
+    await _computeCounts();
+
+    final file = await ref.read(pdfExportServiceProvider).createA4Report(
+          title: 'report-center-$_reportKey-${_month.text}',
+          rows: [
+            {'field': 'Month', 'value': _month.text},
+            {'field': 'Substation', 'value': (sub?['name'] ?? _substationId).toString()},
+            {'field': 'Report type', 'value': _reportKey},
+            {'field': 'Daily logs', 'value': '$_dailyLog'},
+            {'field': 'Fault rows', 'value': '$_faults'},
+            {'field': 'Maintenance rows', 'value': '$_maintenance'},
+            {'field': 'Battery rows', 'value': '$_battery'},
+            {'field': 'Charge handover rows', 'value': '$_handover'},
+            ..._detailRows,
+          ],
+        );
+    await ref.read(pdfExportServiceProvider).shareFile(file);
+  }
+
+  String _extractDate(ModuleRecord r) {
+    final p = r.payload;
+    const keys = [
+      'operationalDate',
+      'date',
+      'faultDate',
+      'workDate',
+      'handoverDate',
+      'entryDate',
+    ];
+    for (final k in keys) {
+      final v = (p[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return r.updatedAt.toIso8601String().substring(0, 10);
+  }
+
+  num _toNum(dynamic v) {
+    if (v is num) return v;
+    return num.tryParse((v ?? '').toString().trim()) ?? 0;
+  }
+
+  num _sumByKeys(List<dynamic> rows, List<String> keys) {
+    num s = 0;
+    for (final row in rows.whereType<Map>()) {
+      for (final k in keys) {
+        if (row[k] != null && row[k].toString().trim().isNotEmpty) {
+          s += _toNum(row[k]);
+          break;
+        }
+      }
+    }
+    return s;
+  }
+
+  List<Map<String, String>> _buildDetails(
+    List<ModuleRecord> daily,
+    List<ModuleRecord> faults,
+    List<ModuleRecord> maintenance,
+    List<ModuleRecord> battery,
+    List<ModuleRecord> handover,
+  ) {
+    final rows = <Map<String, String>>[];
+    final allDailyRows = daily
+        .expand((d) => ((d.payload['rows'] as List?) ?? const []).whereType<Map>())
+        .toList(growable: false);
+    final allInterruptions = daily
+        .expand((d) => ((d.payload['interruptions'] as List?) ?? const []).whereType<Map>())
+        .toList(growable: false);
+    final allMeterChanges = daily
+        .expand((d) => ((d.payload['meterChangeEvents'] as List?) ?? const []).whereType<Map>())
+        .toList(growable: false);
+
+    if (_reportKey == 'monthlyConsumption') {
+      final totalKwh = _sumByKeys(allDailyRows, const ['kwh', 'kWh', 'units', 'reading']);
+      rows.add({'field': 'Total feeder rows', 'value': '${allDailyRows.length}'});
+      rows.add({'field': 'Total monthly kWh', 'value': totalKwh.toStringAsFixed(2)});
+      rows.add({'field': 'Meter change events', 'value': '${allMeterChanges.length}'});
+    } else if (_reportKey == 'dailyMinMaxSummary' || _reportKey == 'monthlyMinMax') {
+      num? minAmp;
+      num? maxAmp;
+      num? minKv;
+      num? maxKv;
+      for (final r in allDailyRows) {
+        final amp = _toNum(r['amp']);
+        final kv = _toNum(r['kv']);
+        minAmp = minAmp == null ? amp : (amp < minAmp ? amp : minAmp);
+        maxAmp = maxAmp == null ? amp : (amp > maxAmp ? amp : maxAmp);
+        minKv = minKv == null ? kv : (kv < minKv ? kv : minKv);
+        maxKv = maxKv == null ? kv : (kv > maxKv ? kv : maxKv);
+      }
+      rows.add({'field': 'Min amp', 'value': (minAmp ?? 0).toStringAsFixed(2)});
+      rows.add({'field': 'Max amp', 'value': (maxAmp ?? 0).toStringAsFixed(2)});
+      rows.add({'field': 'Min kV', 'value': (minKv ?? 0).toStringAsFixed(2)});
+      rows.add({'field': 'Max kV', 'value': (maxKv ?? 0).toStringAsFixed(2)});
+    } else if (_reportKey == 'monthlyInterruption') {
+      final faultDuration = faults.fold<num>(0, (p, r) {
+        final val = _toNum(r.payload['durationHours']) +
+            _toNum(r.payload['durationHrs']) +
+            _toNum(r.payload['duration']);
+        return p + val;
+      });
+      rows.add({'field': 'Daily interruption rows', 'value': '${allInterruptions.length}'});
+      rows.add({'field': 'Fault entries', 'value': '${faults.length}'});
+      rows.add({'field': 'Fault duration (hrs)', 'value': faultDuration.toStringAsFixed(2)});
+    } else if (_reportKey == 'monthlyEnergyBalance' || _reportKey == 'mainIncReconciliation') {
+      final mainIncomingIds = _feeders
+          .where((f) =>
+              (f['substationId'] ?? '').toString() == _substationId &&
+              ((f['isMainIncoming'] == true) || (f['feederType'] ?? '').toString() == 'main_incoming'))
+          .map((f) => (f['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      num incoming = 0;
+      num outgoing = 0;
+      for (final row in allDailyRows) {
+        final kwh = _toNum(row['kwh']);
+        final fid = (row['feederId'] ?? '').toString();
+        if (mainIncomingIds.contains(fid)) {
+          incoming += kwh;
+        } else {
+          outgoing += kwh;
+        }
+      }
+      final loss = incoming - outgoing;
+      final lossPct = incoming == 0 ? 0 : (loss / incoming) * 100;
+      rows.add({'field': 'Incoming kWh', 'value': incoming.toStringAsFixed(2)});
+      rows.add({'field': 'Outgoing kWh', 'value': outgoing.toStringAsFixed(2)});
+      rows.add({'field': 'Balance/Loss kWh', 'value': loss.toStringAsFixed(2)});
+      rows.add({'field': 'Loss %', 'value': '${lossPct.toStringAsFixed(2)}%'});
+    } else if (_reportKey == 'feederLoadTrend') {
+      final feederTotals = <String, num>{};
+      for (final row in allDailyRows) {
+        final feederId = (row['feederId'] ?? '').toString();
+        feederTotals[feederId] = (feederTotals[feederId] ?? 0) + _toNum(row['kwh']);
+      }
+      final sorted = feederTotals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+      for (final e in sorted.take(5)) {
+        rows.add({'field': 'Feeder ${e.key}', 'value': e.value.toStringAsFixed(2)});
+      }
+      if (rows.isEmpty) {
+        rows.add({'field': 'Feeder trend', 'value': 'No feeder load data for selected month'});
+      }
+    } else if (_reportKey == 'abnormalConsumption') {
+      final highRows = allDailyRows.where((r) => _toNum(r['kwh']) > 1000).length;
+      final lowRows = allDailyRows.where((r) => _toNum(r['kwh']) > 0 && _toNum(r['kwh']) < 10).length;
+      rows.add({'field': 'Rows > 1000 kWh', 'value': '$highRows'});
+      rows.add({'field': 'Rows < 10 kWh', 'value': '$lowRows'});
+      rows.add({'field': 'Total checked rows', 'value': '${allDailyRows.length}'});
+    } else if (_reportKey == 'eventImpact') {
+      rows.add({'field': 'Fault events', 'value': '${faults.length}'});
+      rows.add({'field': 'Maintenance events', 'value': '${maintenance.length}'});
+      rows.add({'field': 'Battery events', 'value': '${battery.length}'});
+      rows.add({'field': 'Charge handover events', 'value': '${handover.length}'});
+    } else if (_reportKey == 'dataCompleteness') {
+      final withRows = daily.where((d) => ((d.payload['rows'] as List?) ?? const []).isNotEmpty).length;
+      final withInterruptions =
+          daily.where((d) => ((d.payload['interruptions'] as List?) ?? const []).isNotEmpty).length;
+      final withMeterChanges =
+          daily.where((d) => ((d.payload['meterChangeEvents'] as List?) ?? const []).isNotEmpty).length;
+      rows.add({'field': 'Daily logs with feeder rows', 'value': '$withRows / ${daily.length}'});
+      rows.add({'field': 'Daily logs with interruptions', 'value': '$withInterruptions / ${daily.length}'});
+      rows.add({'field': 'Daily logs with meter changes', 'value': '$withMeterChanges / ${daily.length}'});
+    }
+
+    if (rows.isEmpty) {
+      rows.add({'field': 'Details', 'value': 'No detail rows for selected report.'});
+    }
+    return rows;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return Scaffold(
+      appBar: AppBar(title: const Text('Report Center')),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          TextField(controller: _month, decoration: const InputDecoration(labelText: 'Month (YYYY-MM)')),
+          DropdownButtonFormField<String>(
+            value: _substationId.isEmpty ? null : _substationId,
+            decoration: const InputDecoration(labelText: 'Substation'),
+            items: _substations
+                .map((s) => DropdownMenuItem(value: s['id']?.toString(), child: Text((s['name'] ?? '').toString())))
+                .toList(),
+            onChanged: (v) async {
+              setState(() => _substationId = v ?? '');
+              await _computeCounts();
+              if (!mounted) return;
+              setState(() {});
+            },
+          ),
+          DropdownButtonFormField<String>(
+            value: _reportKey,
+            decoration: const InputDecoration(labelText: 'Report Type'),
+            items: _reportOptions.map((r) => DropdownMenuItem(value: r.$1, child: Text(r.$2))).toList(),
+            onChanged: (v) async {
+              setState(() => _reportKey = v ?? _reportKey);
+              await _computeCounts();
+              if (!mounted) return;
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _shareSummary,
+            icon: const Icon(Icons.picture_as_pdf),
+            label: const Text('Generate & Share Report Summary PDF'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await _computeCounts();
+              if (!mounted) return;
+              setState(() {});
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh Counts'),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              title: const Text('Daily Log'),
+              trailing: Text('$_dailyLog', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              title: const Text('Fault'),
+              trailing: Text('$_faults', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              title: const Text('Maintenance'),
+              trailing: Text('$_maintenance', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              title: const Text('Battery'),
+              trailing: Text('$_battery', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              title: const Text('Charge Handover'),
+              trailing: Text('$_handover', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Detailed output', style: TextStyle(fontWeight: FontWeight.w700)),
+          ..._detailRows.map(
+            (r) => Card(
+              child: ListTile(
+                dense: true,
+                title: Text(r['field'] ?? ''),
+                trailing: Text(
+                  r['value'] ?? '',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

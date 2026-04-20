@@ -1,0 +1,434 @@
+/**
+ * Mobile-first responsive layer (loads after index.css).
+ * Breakpoints: 480+, 768+, 1024+, 1280+ (screen only).
+ * Aligns wide layouts with workspace compact mode at max-width 1080px.
+ */
+
+:root {
+  --rf-pad: clamp(12px, 2.4vw, 24px);
+  --rf-gap: clamp(12px, 2vw, 20px);
+  --rf-radius: clamp(14px, 2vw, 22px);
+  --rf-touch: 44px;
+  --rf-text: clamp(15px, 0.22rem + 0.55vw, 16px);
+  --rf-text-sm: clamp(13px, 0.18rem + 0.45vw, 14px);
+  --rf-h2: clamp(1.15rem, 0.9rem + 1.1vw, 1.65rem);
+}
+
+@media screen {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  #root,
+  .app-shell,
+  .workspace-body,
+  .workspace-content-shell,
+  .page-stack {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* .workspace-body padding-top lives in index.css (single source). */
+
+  /* Avoid creating an accidental vertical scrollport on <main> (breaks sticky and
+     can clip focus pages). Wide tables scroll inside their own shells. */
+  .workspace-content-shell,
+  .workspace-content-shell.content-shell {
+    overflow-x: visible;
+  }
+
+  .workspace-content-shell.content-shell,
+  .content-shell {
+    padding-inline: var(--rf-pad);
+    padding-block: clamp(12px, 2vw, 22px);
+  }
+
+  .content-card,
+  .hero-card,
+  .auth-card,
+  .loading-card,
+  .detail-card,
+  .feature-card,
+  .metric-card {
+    font-size: var(--rf-text);
+    border-radius: var(--rf-radius);
+  }
+
+  .content-card h2,
+  .hero-card h2,
+  .section-heading h2 {
+    font-size: var(--rf-h2);
+  }
+
+  .eyebrow,
+  .muted-copy {
+    font-size: var(--rf-text-sm);
+  }
+
+  /* —— Forms: default single column —— */
+  .details-grid,
+  .hr-form-grid,
+  .hr-info-grid,
+  .attendance-validation-grid,
+  .attendance-operator-offsets,
+  .attendance-wizard-strip,
+  .attendance-workflow-grid,
+  .grid-cards,
+  .architecture-grid,
+  .report-metadata-grid,
+  .dlr-recent-list,
+  .daily-log-scope-checklist {
+    gap: var(--rf-gap);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @media (min-width: 480px) {
+    .grid-cards,
+    .architecture-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    }
+  }
+
+  @media (min-width: 768px) {
+    .details-grid,
+    .hr-form-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .report-metadata-grid,
+    .hr-info-grid,
+    .attendance-validation-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .attendance-workflow-grid,
+    .attendance-wizard-strip,
+    .attendance-operator-offsets {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    }
+
+    .audit-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .details-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    }
+
+    .hr-form-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    }
+
+    .hr-info-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .details-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    }
+  }
+
+  /* —— Hero meta & login detail cards —— */
+  .hero-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--rf-gap);
+  }
+
+  @media (min-width: 480px) {
+    .hero-meta-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 768px) {
+    .hero-meta-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+    }
+  }
+
+  /* —— Auth: stack on small screens —— */
+  .auth-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 100dvh;
+  }
+
+  @media (min-width: 1024px) {
+    .auth-layout {
+      grid-template-columns: minmax(0, 1.1fr) minmax(min(100%, 340px), 0.9fr);
+    }
+  }
+
+  /* —— Hero card: stack until wide —— */
+  .hero-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--rf-gap);
+  }
+
+  @media (min-width: 1024px) {
+    .hero-card {
+      grid-template-columns: minmax(0, 1.25fr) minmax(min(100%, 260px), 0.85fr);
+    }
+  }
+
+  /* —— Dashboard: single column <1081 to match workspace drawer layout —— */
+  .dashboard-banner,
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--rf-gap);
+  }
+
+  .dashboard-summary-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--rf-gap);
+  }
+
+  @media (min-width: 480px) {
+    .dashboard-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 768px) {
+    .dashboard-summary-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
+    }
+  }
+
+  @media (min-width: 768px) and (max-width: 1080px) {
+    .dashboard-banner {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .dashboard-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+
+  @media (min-width: 1081px) {
+    .dashboard-banner {
+      grid-template-columns: minmax(0, 1.3fr) minmax(min(100%, 220px), 0.7fr);
+    }
+
+    .dashboard-grid {
+      grid-template-columns: minmax(0, 1.1fr) minmax(min(100%, 300px), 0.9fr);
+    }
+
+    .dashboard-summary-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .dashboard-action-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    }
+  }
+
+  /* —— Header: never rigid min widths; wrap —— */
+  .workspace-header-inner {
+    row-gap: var(--rf-gap);
+  }
+
+  .workspace-header-left,
+  .workspace-header-center,
+  .workspace-header-right {
+    min-width: 0;
+  }
+
+  .workspace-header-right {
+    flex-wrap: wrap;
+  }
+
+  /* —— Form controls full width of cell —— */
+  .form-stack input:not([type='checkbox']):not([type='file']),
+  .form-stack select,
+  .form-stack textarea,
+  .details-grid input:not([type='checkbox']):not([type='file']),
+  .details-grid select,
+  .details-grid textarea,
+  .hr-field input,
+  .hr-field select,
+  .hr-field textarea {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* —— Tables: scroll wrappers, no squish —— */
+  .table-shell,
+  .report-table-shell,
+  .daily-log-table-shell,
+  .daily-log-report-shell,
+  .daily-log-entry-shell,
+  .attendance-editor-shell,
+  .battery-cell-table-shell {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* —— Action rows —— */
+  .inline-actions,
+  .table-actions,
+  .report-actions,
+  .workspace-focus-actions,
+  .hr-detail-actions,
+  .hr-title-actions {
+    flex-wrap: wrap;
+    gap: clamp(8px, 1.5vw, 12px);
+  }
+
+  /* —— Touch-friendly targets (small / coarse pointers) —— */
+  @media (max-width: 767px) {
+    .primary-button,
+    .ghost-button,
+    .ghost-light-button,
+    .danger-button,
+    .tab-button,
+    .small-button,
+    .workspace-profile-action,
+    .header-icon-button {
+      min-height: var(--rf-touch);
+      padding-block: max(10px, 0.35em);
+    }
+
+    .form-stack input:not([type='checkbox']):not([type='file']),
+    .form-stack select,
+    .form-stack textarea,
+    .content-card input:not([type='checkbox']):not([type='file']),
+    .content-card select,
+    .content-card textarea {
+      min-height: var(--rf-touch);
+    }
+  }
+
+  @media (pointer: coarse) {
+    .nav-link,
+    .workspace-nav-link {
+      min-height: var(--rf-touch);
+    }
+  }
+
+  /* —— Modals stay inside viewport —— */
+  .hr-modal {
+    width: 100%;
+    max-width: min(580px, calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 24px));
+  }
+
+  /* —— Report preview: fluid width cap without fixed page —— */
+  .report-document,
+  .report-landscape {
+    width: 100%;
+    max-width: min(100%, 72rem);
+    margin-inline: auto;
+  }
+
+  .report-preview-layout-wide .report-document,
+  .report-preview-layout-wide .report-landscape {
+    max-width: 100%;
+  }
+
+  /* —— Workspace focus toolbar reflow —— */
+  .workspace-focus-toolbar {
+    min-width: 0;
+  }
+
+  .workspace-focus-controls {
+    min-width: 0;
+  }
+
+  /* —— Utility: stack full-width children —— */
+  .rf-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--rf-gap);
+  }
+
+  .rf-stack > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .rf-fluid {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+
+  .workspace-header,
+  .workspace-sidebar,
+  .workspace-sidebar-backdrop,
+  .workspace-profile-shell,
+  .workspace-expand-button,
+  .workspace-focus-actions,
+  .report-actions,
+  .inline-actions,
+  .table-actions,
+  .daily-log-drawer-backdrop,
+  .daily-log-side-drawer,
+  button {
+    display: none !important;
+  }
+
+  .workspace-body,
+  .workspace-content-shell.content-shell,
+  .page-stack,
+  .content-card,
+  .hero-card,
+  .report-surface-card,
+  .report-document,
+  .report-landscape {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  .table-shell,
+  .report-table-shell,
+  .daily-log-table-shell,
+  .daily-log-report-shell,
+  .daily-log-entry-shell,
+  .attendance-editor-shell {
+    overflow: visible !important;
+    border: 0 !important;
+  }
+
+  .simple-table,
+  .report-table,
+  .daily-log-entry-table,
+  .daily-log-report-table {
+    width: 100% !important;
+    min-width: 100% !important;
+    table-layout: auto !important;
+    font-size: 10.5pt;
+  }
+}
