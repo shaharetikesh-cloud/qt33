@@ -28,6 +28,7 @@ import { supabase, supabaseConfigError } from '../lib/supabase'
 import { firebaseAuth } from '../lib/firebase'
 import { setSupabaseAccessTokenProvider } from '../lib/supabase'
 import { getSubscriptionAccessState } from '../lib/subscription'
+import { onAuthStateChanged } from 'firebase/auth'
 
 const AuthContext = createContext(null)
 
@@ -148,23 +149,37 @@ export function AuthProvider({ children }) {
     let alive = true
 
     if (isLocalSqlMode) {
-      void bootstrapLocalSession()
-        .catch((error) => {
+      const runLocalBootstrap = async () => {
+        try {
+          await bootstrapLocalSession()
+        } catch (error) {
           if (!alive) {
             return
           }
           setSession(null)
           setProfile(null)
           setProfileError(error?.message || 'Session validate hou shakla nahi.')
-        })
-        .finally(() => {
-          if (alive) {
-            setLoading(false)
-          }
-        })
+        }
+      }
+
+      void runLocalBootstrap().finally(() => {
+        if (alive) {
+          setLoading(false)
+        }
+      })
+
+      const unsubscribe = firebaseAuth
+        ? onAuthStateChanged(firebaseAuth, () => {
+            if (!alive) {
+              return
+            }
+            void runLocalBootstrap()
+          })
+        : () => {}
 
       return () => {
         alive = false
+        unsubscribe()
       }
     }
 

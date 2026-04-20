@@ -1,7 +1,9 @@
 import { initializeApp } from 'firebase/app'
 import {
+  browserLocalPersistence,
   getAuth,
   connectAuthEmulator,
+  setPersistence,
 } from 'firebase/auth'
 import { buildMissingEnvError, getMissingEnvKeys } from './envConfig'
 
@@ -22,6 +24,14 @@ export const firebaseConfigError = firebaseConfigMissing
 
 export const firebaseApp = firebaseConfigMissing ? null : initializeApp(firebaseConfig)
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null
+
+if (firebaseAuth) {
+  void setPersistence(firebaseAuth, browserLocalPersistence).catch((error) => {
+    if (import.meta.env.DEV) {
+      console.warn('[Config] Firebase persistence set failed:', error?.message || error)
+    }
+  })
+}
 
 if (import.meta.env.DEV) {
   if (firebaseConfigMissing) {

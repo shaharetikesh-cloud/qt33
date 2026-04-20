@@ -4,10 +4,8 @@ export default function Qt33OffsiteBrand({ variant = 'login' }) {
   return (
     <a
       className={`qt33-brand-link qt33-brand-link--${variant}`}
-      href="https://qt33.in/"
-      target="_blank"
-      rel="noopener noreferrer"
-      title="qt33.in — Substation DLR and Reports (opens in a new tab)"
+      href="#/"
+      title="QT - Unified Substation ERP Dashboard"
     >
       <img
         src={logoSrc}
