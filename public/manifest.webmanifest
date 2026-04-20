@@ -1,0 +1,17 @@
+{
+  "name": "Unified MSEDCL Workspace",
+  "short_name": "MSEDCL Unified",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#eff4f0",
+  "theme_color": "#0f766e",
+  "description": "Combined workspace for attendance, DLR operations, reporting, and mobile execution.",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

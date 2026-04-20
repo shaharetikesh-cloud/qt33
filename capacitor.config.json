@@ -1,0 +1,6 @@
+{
+  "appId": "com.unified.msedcl.workspace",
+  "appName": "QT DLR",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
