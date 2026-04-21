@@ -87,6 +87,13 @@ class _FaultsMobilePageState extends ConsumerState<FaultsMobilePage> {
             'remark': _remark.text.trim(),
           },
         );
+    final monthKey = _date.text.trim().length >= 7 ? _date.text.trim().substring(0, 7) : '';
+    if (monthKey.isNotEmpty && _substationId.isNotEmpty) {
+      await ref.read(monthlyReportAutomationServiceProvider).regenerateForMonth(
+            substationId: _substationId,
+            monthKey: monthKey,
+          );
+    }
     _faultType.clear();
     _cause.clear();
     _remark.clear();

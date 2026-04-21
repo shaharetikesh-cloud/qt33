@@ -24,4 +24,7 @@ Map<String, dynamic> defaultSettingsBundle() => {
         'nightAllowanceRate': 150,
         'abnormalConsumptionThresholdPercent': 20,
       },
+      'appUi': {
+        'themeMode': 'system',
+      },
     };

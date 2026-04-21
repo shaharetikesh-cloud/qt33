@@ -10,17 +10,61 @@ class PdfExportService {
     required List<Map<String, String>> rows,
   }) async {
     final pdf = pw.Document();
+    final generatedAt = DateTime.now();
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        build: (_) => [
-          pw.Text(title, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 12),
-          pw.TableHelper.fromTextArray(
-            headers: const ['Field', 'Value'],
-            data: rows.map((r) => [r['field'] ?? '', r['value'] ?? '']).toList(),
-          ),
-        ],
+        margin: const pw.EdgeInsets.all(24),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              'QT - Unified Substation ERP Software',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              title,
+              style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              'Generated: ${generatedAt.toIso8601String().replaceFirst('T', ' ').substring(0, 16)}',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+            ),
+            pw.Divider(),
+          ],
+        ),
+        footer: (context) => pw.Column(
+          children: [
+            pw.Divider(),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('QT33 ERP', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+                pw.Text(
+                  'Page ${context.pageNumber} / ${context.pagesCount}',
+                  style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                ),
+              ],
+            ),
+          ],
+        ),
+        build: (_) {
+          final tableRows = rows.map((r) => [r['field'] ?? '', r['value'] ?? '']).toList();
+          return [
+            pw.TableHelper.fromTextArray(
+              headers: const ['Field', 'Value'],
+              data: tableRows,
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+              cellStyle: const pw.TextStyle(fontSize: 9),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(5),
+              },
+            ),
+          ];
+        },
       ),
     );
     final dir = await getTemporaryDirectory();

@@ -154,6 +154,7 @@ class WorkspaceRepository {
       'companyProfile': {...base['companyProfile'] as Map, ...(stored['companyProfile'] as Map? ?? {})},
       'printSettings': {...base['printSettings'] as Map, ...(stored['printSettings'] as Map? ?? {})},
       'attendanceRules': {...base['attendanceRules'] as Map, ...(stored['attendanceRules'] as Map? ?? {})},
+      'appUi': {...base['appUi'] as Map, ...(stored['appUi'] as Map? ?? {})},
     };
   }
 

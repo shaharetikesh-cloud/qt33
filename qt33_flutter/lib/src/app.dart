@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:qt33/src/data/theme_mode_controller.dart';
 import 'package:qt33/src/features/dashboard/home_shell.dart';
 import 'package:qt33/src/features/dlr/battery_mobile_page.dart';
 import 'package:qt33/src/features/dlr/charge_handover_mobile_page.dart';
@@ -73,17 +74,52 @@ class Qt33App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(_routerProvider);
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       title: 'QT33',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0A6DFF)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0A6DFF),
+          brightness: Brightness.light,
+        ),
         useMaterial3: true,
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
         ),
+        cardTheme: const CardThemeData(
+          elevation: 0.5,
+          margin: EdgeInsets.symmetric(vertical: 6),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6EA8FF),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+        ),
+        cardTheme: const CardThemeData(
+          elevation: 0.5,
+          margin: EdgeInsets.symmetric(vertical: 6),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
+      themeMode: themeMode,
       routerConfig: router,
     );
   }

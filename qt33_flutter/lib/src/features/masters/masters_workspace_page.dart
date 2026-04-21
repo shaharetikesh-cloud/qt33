@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qt33/src/data/providers.dart';
+import 'package:qt33/src/data/theme_mode_controller.dart';
 import 'package:qt33/src/domain/feeder_math.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -1338,6 +1339,7 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
   final _footer = TextEditingController();
   final _fontScale = TextEditingController();
   String _orientation = 'portrait';
+  String _themeMode = 'system';
   bool _compact = true;
   var _loading = true;
 
@@ -1366,6 +1368,10 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
     _orientation = ps['defaultOrientation']?.toString() ?? 'portrait';
     _fontScale.text = (ps['fontScale'] ?? 1).toString();
     _compact = ps['compactTables'] == true;
+    final appUi = s['appUi'] as Map? ?? {};
+    _themeMode = appUi['themeMode']?.toString().trim().isNotEmpty == true
+        ? appUi['themeMode'].toString()
+        : 'system';
     setState(() => _loading = false);
   }
 
@@ -1401,6 +1407,25 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
           value: _compact,
           onChanged: (v) => setState(() => _compact = v),
         ),
+        DropdownButtonFormField<String>(
+          value: _themeMode,
+          decoration: const InputDecoration(labelText: 'App theme (Light / Dark)'),
+          items: const [
+            DropdownMenuItem(value: 'system', child: Text('System (फोन सेटिंग प्रमाणे)')),
+            DropdownMenuItem(value: 'light', child: Text('Light')),
+            DropdownMenuItem(value: 'dark', child: Text('Dark')),
+          ],
+          onChanged: (v) async {
+            final next = v ?? 'system';
+            setState(() => _themeMode = next);
+            final mode = switch (next) {
+              'light' => ThemeMode.light,
+              'dark' => ThemeMode.dark,
+              _ => ThemeMode.system,
+            };
+            await ref.read(themeModeProvider.notifier).setThemeMode(mode);
+          },
+        ),
         FilledButton(
           onPressed: () async {
             await ref.read(workspaceRepositoryProvider).saveSettingsBundle({
@@ -1416,7 +1441,16 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
                 'fontScale': num.tryParse(_fontScale.text.trim()) ?? 1,
                 'compactTables': _compact,
               },
+              'appUi': {
+                'themeMode': _themeMode,
+              },
             });
+            final mode = switch (_themeMode) {
+              'light' => ThemeMode.light,
+              'dark' => ThemeMode.dark,
+              _ => ThemeMode.system,
+            };
+            await ref.read(themeModeProvider.notifier).setThemeMode(mode);
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings saved')));
             }
