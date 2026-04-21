@@ -12,6 +12,7 @@ import { supabase } from './supabase'
 const listeners = new Set()
 let syncInFlight = false
 let syncTimer = null
+let cloudSyncAvailable = null
 
 const syncState = {
   online: typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -38,6 +39,32 @@ function normalizeSyncCursor(cursorValue) {
     return fallback
   }
   return new Date(parsed).toISOString()
+}
+
+function isMissingErpRecordsError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    status === 404 ||
+    message.includes('erp_records') ||
+    message.includes('relation') && message.includes('does not exist')
+  )
+}
+
+async function ensureCloudSyncAvailability() {
+  if (!supabase) {
+    return false
+  }
+  if (cloudSyncAvailable !== null) {
+    return cloudSyncAvailable
+  }
+  const { error } = await supabase.from('erp_records').select('id', { head: true, count: 'exact' })
+  if (error) {
+    cloudSyncAvailable = !isMissingErpRecordsError(error)
+    return cloudSyncAvailable
+  }
+  cloudSyncAvailable = true
+  return true
 }
 
 function emitSyncState() {
@@ -199,6 +226,9 @@ export async function triggerSync() {
   if (!supabase || syncInFlight || !syncState.online) {
     return
   }
+  if (!(await ensureCloudSyncAvailability())) {
+    return
+  }
 
   syncInFlight = true
   syncState.syncing = true
@@ -239,6 +269,10 @@ export async function triggerSync() {
         }
         await idbDeleteOutboxItem(operation.queue_id)
       } catch (error) {
+        if (isMissingErpRecordsError(error)) {
+          cloudSyncAvailable = false
+          return
+        }
         const retryCount = (operation.retry_count || 0) + 1
         const delay = nextBackoffDelayMs(retryCount)
         await idbUpdateOutboxStatus(
@@ -268,6 +302,9 @@ export async function triggerSync() {
 
 async function pullServerUpdatesIncremental() {
   if (!supabase || !syncState.online) {
+    return 0
+  }
+  if (!(await ensureCloudSyncAvailability())) {
     return 0
   }
   let pulledRows = 0
@@ -302,7 +339,14 @@ async function pullServerUpdatesIncremental() {
         .gt('updated_at', cursor)
         .order('updated_at', { ascending: true })
         .limit(300)
-      if (error || !data?.length) {
+      if (error) {
+        if (isMissingErpRecordsError(error)) {
+          cloudSyncAvailable = false
+        }
+        keepFetching = false
+        continue
+      }
+      if (!data?.length) {
         keepFetching = false
         continue
       }
@@ -340,18 +384,27 @@ export async function syncScope(scope) {
   if (!supabase || !syncState.online) {
     return
   }
+  if (!(await ensureCloudSyncAvailability())) {
+    return
+  }
   let cursor = normalizeSyncCursor(
     await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z'),
   )
   let keepFetching = true
   while (keepFetching) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('erp_records')
       .select('id, scope, payload, deleted, updated_at, client_updated_at, updated_by, device_id, version')
       .eq('scope', scope)
       .gt('updated_at', cursor)
       .order('updated_at', { ascending: true })
       .limit(300)
+    if (error) {
+      if (isMissingErpRecordsError(error)) {
+        cloudSyncAvailable = false
+      }
+      return
+    }
     for (const row of data || []) {
       await idbPutRecord(scope, {
         id: row.id,

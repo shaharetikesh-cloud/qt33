@@ -23,44 +23,12 @@ import { supabase, supabaseConfigError } from './supabase'
 import { scheduleSync, syncScope, triggerSync } from './syncEngine'
 import { firebaseConfigError } from './firebase'
 
-let substationTableNameCache = null
 const MASTER_COLLECTION_KEYS = ['divisions', 'feeders', 'batterySets', 'transformers']
 
 async function getAuthToken() {
   const user = firebaseAuth?.currentUser
   if (!user) return ''
   return user.getIdToken()
-}
-
-async function resolveSubstationTableName() {
-  if (!supabase) {
-    return 'substations'
-  }
-  if (substationTableNameCache) {
-    return substationTableNameCache
-  }
-
-  const candidates = ['substations', 'substation']
-  for (const tableName of candidates) {
-    const { error } = await supabase.from(tableName).select('id', { head: true, count: 'exact' })
-    if (!error) {
-      substationTableNameCache = tableName
-      return tableName
-    }
-  }
-
-  substationTableNameCache = 'substations'
-  return substationTableNameCache
-}
-
-function isMissingSubstationTableError(error) {
-  const message = String(error?.message || '').toLowerCase()
-  return (
-    message.includes("could not find the table 'public.substations'") ||
-    message.includes("could not find the table 'public.substation'") ||
-    message.includes('relation "public.substations" does not exist') ||
-    message.includes('relation "public.substation" does not exist')
-  )
 }
 
 function isAdminFunctionsEnabled() {
@@ -418,33 +386,9 @@ export async function localDeleteUserSubstationMapping(mappingId) {
 
 export async function localListSubstations() {
   const scopedRows = await localListByScope('substations')
-  if (scopedRows.length) {
-    return [...scopedRows].sort((left, right) =>
-      String(left?.name || '').localeCompare(String(right?.name || '')),
-    )
-  }
-  if (!supabase) return scopedRows
-  const primaryTable = await resolveSubstationTableName()
-  const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
-  let { data, error } = await supabase
-    .from(primaryTable)
-    .select('*')
-    .order('name', { ascending: true })
-  if (error && isMissingSubstationTableError(error)) {
-    substationTableNameCache = fallbackTable
-    ;({ data, error } = await supabase
-      .from(fallbackTable)
-      .select('*')
-      .order('name', { ascending: true }))
-  }
-  if (error) {
-    return scopedRows
-  }
-  const resolvedRows = data ?? []
-  for (const row of resolvedRows) {
-    await localSaveByScope('substations', row)
-  }
-  return resolvedRows
+  return [...scopedRows].sort((left, right) =>
+    String(left?.name || '').localeCompare(String(right?.name || '')),
+  )
 }
 
 export async function localGetWorkspaceConfig() {
@@ -509,30 +453,7 @@ export async function localSaveSettingsBundle(data) {
 
 export async function localCreateSubstation(data) {
   const savedRow = await localSaveByScope('substations', data)
-  if (!supabase) return savedRow
-  const primaryTable = await resolveSubstationTableName()
-  const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
-  let { data: row, error } = await supabase
-    .from(primaryTable)
-    .insert(data)
-    .select('*')
-    .single()
-  if (error && isMissingSubstationTableError(error)) {
-    substationTableNameCache = fallbackTable
-    ;({ data: row, error } = await supabase
-      .from(fallbackTable)
-      .insert(data)
-      .select('*')
-      .single())
-  }
-  if (error && isMissingSubstationTableError(error)) {
-    row = null
-    error = null
-  }
-  if (error) {
-    row = null
-  }
-  return row || savedRow
+  return savedRow
 }
 
 export async function localListEmployees(filters = {}) {
