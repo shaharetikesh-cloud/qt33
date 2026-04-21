@@ -666,7 +666,11 @@ export async function localListSubstations() {
       .order('name', { ascending: true }))
   }
 
-  if (error) return localListByScope('substations')
+  if (error) {
+    throw new Error(
+      "Substation load failed from Supabase. 'substation'/'substations' table ani RLS permissions check kara.",
+    )
+  }
   return data ?? []
 }
 

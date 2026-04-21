@@ -23,6 +23,19 @@ const syncState = {
   lastSyncAt: '',
 }
 
+function normalizeSyncCursor(cursorValue) {
+  const fallback = '1970-01-01T00:00:00.000Z'
+  const parsed = Date.parse(String(cursorValue || ''))
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  // Guard against device clock drift that writes cursor into future and blocks pulls.
+  if (parsed > Date.now() + 5 * 60 * 1000) {
+    return fallback
+  }
+  return new Date(parsed).toISOString()
+}
+
 function emitSyncState() {
   for (const listener of listeners) {
     listener({ ...syncState })
@@ -120,7 +133,8 @@ async function applyUpsert(operation) {
     id: operation.id,
     scope,
     payload,
-    updated_at: operation.updated_at,
+    // Use DB server time ordering to avoid cross-device clock skew.
+    updated_at: new Date().toISOString(),
     client_updated_at: operation.client_updated_at || operation.updated_at,
     updated_by: operation.updated_by || null,
     device_id: operation.device_id || null,
@@ -129,21 +143,25 @@ async function applyUpsert(operation) {
     version: mergeResult.mergedVersion,
     deleted: false,
   }
-  const { error } = await supabase.from('erp_records').upsert(row, { onConflict: 'id' })
+  const { data, error } = await supabase
+    .from('erp_records')
+    .upsert(row, { onConflict: 'id' })
+    .select('updated_at,client_updated_at,updated_by,device_id,version')
+    .single()
   if (error) throw error
-  return { applied: true, conflict: false }
+  return { applied: true, conflict: false, serverRow: data || null }
 }
 
 async function applyDelete(operation) {
   const scope = operation.entity_type || operation.scope
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('erp_records')
     .upsert(
       {
         id: operation.id,
         scope,
         payload: {},
-        updated_at: operation.updated_at,
+        updated_at: new Date().toISOString(),
         client_updated_at: operation.client_updated_at || operation.updated_at,
         updated_by: operation.updated_by || null,
         device_id: operation.device_id || null,
@@ -151,7 +169,10 @@ async function applyDelete(operation) {
       },
       { onConflict: 'id' },
     )
+    .select('updated_at,client_updated_at,updated_by,device_id,version')
+    .single()
   if (error) throw error
+  return { serverRow: data || null }
 }
 
 function nextBackoffDelayMs(retryCount) {
@@ -193,10 +214,12 @@ export async function triggerSync() {
             id: operation.id,
             payload: operation.payload,
             sync_status: 'synced',
-            updated_at: operation.updated_at,
-            client_updated_at: operation.client_updated_at,
-            updated_by: operation.updated_by,
-            device_id: operation.device_id,
+            updated_at: result.serverRow?.updated_at || operation.updated_at,
+            client_updated_at:
+              result.serverRow?.client_updated_at || operation.client_updated_at,
+            updated_by: result.serverRow?.updated_by || operation.updated_by,
+            device_id: result.serverRow?.device_id || operation.device_id,
+            version: Number(result.serverRow?.version || 1),
             deleted: false,
           })
         }
@@ -239,11 +262,18 @@ async function pullServerUpdatesIncremental() {
     'user-substation-mappings',
     'workspace-masters',
     'workspace-settings',
+    'masters:divisions',
+    'masters:feeders',
+    'masters:batterySets',
+    'masters:transformers',
+    'substations',
     'audit-events',
   ]
 
   for (const scope of scopes) {
-    let cursor = await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z')
+    let cursor = normalizeSyncCursor(
+      await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z'),
+    )
     let keepFetching = true
     while (keepFetching) {
       const { data, error } = await supabase
@@ -284,30 +314,37 @@ export async function syncScope(scope) {
   if (!supabase || !syncState.online) {
     return
   }
-  const cursor = await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z')
-  const { data } = await supabase
-    .from('erp_records')
-    .select('id, scope, payload, deleted, updated_at, client_updated_at, updated_by, device_id, version')
-    .eq('scope', scope)
-    .gt('updated_at', cursor)
-    .order('updated_at', { ascending: true })
-    .limit(300)
-  for (const row of data || []) {
-    await idbPutRecord(scope, {
-      id: row.id,
-      payload: row.payload || {},
-      sync_status: 'synced',
-      updated_at: row.updated_at,
-      client_updated_at: row.client_updated_at || row.updated_at,
-      server_received_at: row.updated_at,
-      updated_by: row.updated_by || '',
-      device_id: row.device_id || '',
-      version: row.version || 1,
-      deleted: Boolean(row.deleted),
-    })
-  }
-  if (data?.length) {
-    await idbSetMeta(`sync_cursor:${scope}`, data[data.length - 1].updated_at)
+  let cursor = normalizeSyncCursor(
+    await idbGetMeta(`sync_cursor:${scope}`, '1970-01-01T00:00:00.000Z'),
+  )
+  let keepFetching = true
+  while (keepFetching) {
+    const { data } = await supabase
+      .from('erp_records')
+      .select('id, scope, payload, deleted, updated_at, client_updated_at, updated_by, device_id, version')
+      .eq('scope', scope)
+      .gt('updated_at', cursor)
+      .order('updated_at', { ascending: true })
+      .limit(300)
+    for (const row of data || []) {
+      await idbPutRecord(scope, {
+        id: row.id,
+        payload: row.payload || {},
+        sync_status: 'synced',
+        updated_at: row.updated_at,
+        client_updated_at: row.client_updated_at || row.updated_at,
+        server_received_at: row.updated_at,
+        updated_by: row.updated_by || '',
+        device_id: row.device_id || '',
+        version: row.version || 1,
+        deleted: Boolean(row.deleted),
+      })
+    }
+    if (data?.length) {
+      cursor = data[data.length - 1].updated_at
+      await idbSetMeta(`sync_cursor:${scope}`, cursor)
+    }
+    keepFetching = Boolean(data?.length === 300)
   }
 }
 
