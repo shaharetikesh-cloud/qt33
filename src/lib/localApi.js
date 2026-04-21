@@ -30,6 +30,7 @@ import { scheduleSync, syncScope, triggerSync } from './syncEngine'
 import { firebaseConfigError } from './firebase'
 
 let substationTableNameCache = null
+const MASTER_COLLECTION_KEYS = ['divisions', 'feeders', 'batterySets', 'transformers']
 
 async function getAuthToken() {
   const user = firebaseAuth?.currentUser
@@ -610,19 +611,68 @@ export async function localListSubstations() {
 }
 
 export async function localGetWorkspaceConfig() {
-  const [masters, settings] = await Promise.all([
+  const [legacyMasters, settings, divisions, feeders, batterySets, transformers] =
+    await Promise.all([
     localListByScope('workspace-masters'),
     localListByScope('workspace-settings'),
-  ])
-  return { masters: masters[0]?.payload || {}, settings: settings[0]?.payload || {}, updatedAt: new Date().toISOString() }
+    localListByScope('masters:divisions'),
+    localListByScope('masters:feeders'),
+    localListByScope('masters:batterySets'),
+    localListByScope('masters:transformers'),
+    ])
+
+  const typedMasters = {
+    divisions: divisions || [],
+    feeders: feeders || [],
+    batterySets: batterySets || [],
+    transformers: transformers || [],
+  }
+  const mergedMasters = {
+    ...(legacyMasters[0]?.payload || {}),
+    ...typedMasters,
+  }
+  return {
+    masters: mergedMasters,
+    settings: settings[0]?.payload || {},
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 export async function localSaveMasterRecord(type, data) {
-  return localSaveByScope(`masters:${type}`, data)
+  const savedRecord = await localSaveByScope(`masters:${type}`, data)
+  if (!MASTER_COLLECTION_KEYS.includes(type)) {
+    return savedRecord
+  }
+
+  const config = await localGetWorkspaceConfig()
+  const currentCollection = Array.isArray(config.masters?.[type]) ? config.masters[type] : []
+  const existingIndex = currentCollection.findIndex((item) => item.id === savedRecord.id)
+  const nextCollection = existingIndex >= 0
+    ? currentCollection.map((item, index) => (index === existingIndex ? { ...item, ...savedRecord } : item))
+    : [savedRecord, ...currentCollection]
+
+  await localSaveByScope('workspace-masters', {
+    id: 'default-masters',
+    ...(config.masters || {}),
+    [type]: nextCollection,
+  })
+
+  return savedRecord
 }
 
 export async function localDeleteMasterRecord(type, recordId) {
   await localDeleteByScope(`masters:${type}`, recordId)
+  if (!MASTER_COLLECTION_KEYS.includes(type)) {
+    return
+  }
+
+  const config = await localGetWorkspaceConfig()
+  const currentCollection = Array.isArray(config.masters?.[type]) ? config.masters[type] : []
+  await localSaveByScope('workspace-masters', {
+    id: 'default-masters',
+    ...(config.masters || {}),
+    [type]: currentCollection.filter((item) => item.id !== recordId),
+  })
 }
 
 export async function localSaveSettingsBundle(data) {
