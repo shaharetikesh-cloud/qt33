@@ -418,6 +418,11 @@ export default function MastersPage() {
             options: feederOptions,
           },
           {
+            name: 'displayOrder',
+            label: 'Serial No',
+            type: 'number',
+          },
+          {
             name: 'ctRatio',
             label: 'CT Ratio',
             applyChange: applyFeederCtRatioChange,
@@ -466,6 +471,7 @@ export default function MastersPage() {
             type: 'select',
             options: substationOptions,
           },
+          { name: 'displayOrder', label: 'Serial No', type: 'number' },
           { name: 'cellCount', label: 'Cell Count', type: 'number', required: true },
           { name: 'nominalVoltage', label: 'Nominal Voltage', type: 'number', required: true },
         ]}
@@ -486,7 +492,7 @@ export default function MastersPage() {
             type: 'select',
             options: substationOptions,
           },
-          { name: 'displayOrder', label: 'Display Order', type: 'number' },
+          { name: 'displayOrder', label: 'Serial No', type: 'number' },
           { name: 'ratedCapacityMva', label: 'Rated Capacity (MVA)', type: 'number' },
         ]}
         records={transformers}

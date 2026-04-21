@@ -103,6 +103,12 @@ function sortConfiguredList(list) {
 
 function sortFeedersByAddSequence(list) {
   return [...list].sort((left, right) => {
+    const leftOrder = getDisplayOrder(left, Number.MAX_SAFE_INTEGER)
+    const rightOrder = getDisplayOrder(right, Number.MAX_SAFE_INTEGER)
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder
+    }
+
     const leftCreatedAt = getCreatedAtValue(left, left._sourceIndex ?? Number.MAX_SAFE_INTEGER)
     const rightCreatedAt = getCreatedAtValue(
       right,

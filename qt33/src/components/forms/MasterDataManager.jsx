@@ -21,6 +21,7 @@ export default function MasterDataManager({
   onDelete,
 }) {
   const [form, setForm] = useState(buildInitialForm(fields))
+  const [editingId, setEditingId] = useState('')
 
   const columns = useMemo(
     () => fields.filter((field) => field.showInTable !== false),
@@ -29,6 +30,7 @@ export default function MasterDataManager({
 
   function resetForm() {
     setForm(buildInitialForm(fields))
+    setEditingId('')
   }
 
   function updateField(field, value) {
@@ -46,8 +48,16 @@ export default function MasterDataManager({
 
   async function handleSubmit(event) {
     event.preventDefault()
-    await onSave(form)
+    await onSave({
+      ...form,
+      id: editingId || form.id || undefined,
+    })
     resetForm()
+  }
+
+  function handleEdit(record) {
+    setEditingId(record.id || '')
+    setForm(buildInitialForm(fields, record))
   }
 
   return (
@@ -103,10 +113,10 @@ export default function MasterDataManager({
         </div>
         <div className="inline-actions">
           <button type="submit" className="primary-button">
-            Save
+            {editingId ? 'Update' : 'Save'}
           </button>
           <button type="button" className="ghost-light-button" onClick={resetForm}>
-            Clear
+            {editingId ? 'Cancel' : 'Clear'}
           </button>
         </div>
       </form>
@@ -141,6 +151,13 @@ export default function MasterDataManager({
                   )
                 })}
                 <td>
+                  <button
+                    type="button"
+                    className="ghost-light-button small-button"
+                    onClick={() => handleEdit(record)}
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     className="danger-button small-button"
