@@ -657,6 +657,20 @@ export default function AppShell() {
           ) : null}
 
           <Outlet />
+          <section className="content-card" style={{ marginTop: '1rem' }}>
+            <p className="muted-copy">
+              Contact: qt33dlrerp@gmail.com |{' '}
+              <a
+                href="https://youtube.com/@qt-unifiedsubstationerp?si=AMl-m0btmMKwHAjh"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open YouTube channel"
+                title="YouTube"
+              >
+                <AppIcon name="youtube" size={14} />
+              </a>
+            </p>
+          </section>
         </main>
       </div>
     </div>

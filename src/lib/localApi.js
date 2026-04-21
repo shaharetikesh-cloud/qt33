@@ -631,7 +631,9 @@ export async function localSaveSettingsBundle(data) {
 }
 
 export async function localCreateSubstation(data, actor = null) {
-  if (!supabase) throw new Error('Supabase not configured.')
+  if (!supabase) {
+    return localSaveByScope('substations', data)
+  }
   const primaryTable = await resolveSubstationTableName()
   const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
   let { data: row, error } = await supabase
@@ -647,6 +649,10 @@ export async function localCreateSubstation(data, actor = null) {
       .insert(data)
       .select('*')
       .single())
+  }
+  if (error && isMissingSubstationTableError(error)) {
+    const fallbackRow = await localSaveByScope('substations', data)
+    return fallbackRow
   }
   if (error) throw error
 
