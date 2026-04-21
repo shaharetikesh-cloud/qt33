@@ -44,11 +44,16 @@ function normalizeSyncCursor(cursorValue) {
 
 function isMissingErpRecordsError(error) {
   const status = Number(error?.status || error?.statusCode || 0)
+  const code = String(error?.code || '').toUpperCase()
   const message = String(error?.message || '').toLowerCase()
   return (
     status === 404 ||
-    message.includes('erp_records') ||
-    message.includes('relation') && message.includes('does not exist')
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes("could not find the table 'public.erp_records'") ||
+    (message.includes('relation') &&
+      message.includes('erp_records') &&
+      message.includes('does not exist'))
   )
 }
 
