@@ -23,10 +23,33 @@ import { supabase, supabaseConfigError } from './supabase'
 import { scheduleSync, syncScope, triggerSync } from './syncEngine'
 import { firebaseConfigError } from './firebase'
 
+let substationTableNameCache = null
+
 async function getAuthToken() {
   const user = firebaseAuth?.currentUser
   if (!user) return ''
   return user.getIdToken()
+}
+
+async function resolveSubstationTableName() {
+  if (!supabase) {
+    return 'substations'
+  }
+  if (substationTableNameCache) {
+    return substationTableNameCache
+  }
+
+  const candidates = ['substations', 'substation']
+  for (const tableName of candidates) {
+    const { error } = await supabase.from(tableName).select('id', { head: true, count: 'exact' })
+    if (!error) {
+      substationTableNameCache = tableName
+      return tableName
+    }
+  }
+
+  substationTableNameCache = 'substations'
+  return substationTableNameCache
 }
 
 function isAdminFunctionsEnabled() {
@@ -328,7 +351,8 @@ export async function localDeleteUserSubstationMapping(mappingId) {
 
 export async function localListSubstations() {
   if (!supabase) return localListByScope('substations')
-  const { data, error } = await supabase.from('substations').select('*').order('name', { ascending: true })
+  const tableName = await resolveSubstationTableName()
+  const { data, error } = await supabase.from(tableName).select('*').order('name', { ascending: true })
   if (error) return localListByScope('substations')
   return data ?? []
 }
@@ -356,7 +380,8 @@ export async function localSaveSettingsBundle(data) {
 
 export async function localCreateSubstation(data) {
   if (!supabase) throw new Error('Supabase not configured.')
-  const { data: row, error } = await supabase.from('substations').insert(data).select('*').single()
+  const tableName = await resolveSubstationTableName()
+  const { data: row, error } = await supabase.from(tableName).insert(data).select('*').single()
   if (error) throw error
   return row
 }
