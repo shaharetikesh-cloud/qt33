@@ -57,6 +57,12 @@ function isMissingErpRecordsError(error) {
   )
 }
 
+function isAuthorizationSyncError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = String(error?.code || '').toUpperCase()
+  return status === 401 || status === 403 || code === '42501'
+}
+
 async function ensureCloudSyncAvailability() {
   if (!supabase) {
     return false
@@ -290,6 +296,10 @@ export async function triggerSync() {
             last_error: error instanceof Error ? error.message : 'Sync failed',
           },
         )
+        if (isAuthorizationSyncError(error)) {
+          // Avoid hammering identical unauthorized writes for entire queue.
+          break
+        }
       } finally {
         syncState.runProcessed += 1
         emitSyncState()
