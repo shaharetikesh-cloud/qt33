@@ -650,7 +650,13 @@ export async function localDeleteUserSubstationMapping(mappingId) {
 }
 
 export async function localListSubstations() {
-  if (!supabase) return localListByScope('substations')
+  const scopedRows = await localListByScope('substations')
+  if (scopedRows.length) {
+    return [...scopedRows].sort((left, right) =>
+      String(left?.name || '').localeCompare(String(right?.name || '')),
+    )
+  }
+  if (!supabase) return scopedRows
   const primaryTable = await resolveSubstationTableName()
   const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
   let { data, error } = await supabase
@@ -667,11 +673,13 @@ export async function localListSubstations() {
   }
 
   if (error) {
-    throw new Error(
-      "Substation load failed from Supabase. 'substation'/'substations' table ani RLS permissions check kara.",
-    )
+    return scopedRows
   }
-  return data ?? []
+  const resolvedRows = data ?? []
+  for (const row of resolvedRows) {
+    await localSaveByScope('substations', row)
+  }
+  return resolvedRows
 }
 
 export async function localGetWorkspaceConfig() {
@@ -745,8 +753,9 @@ export async function localSaveSettingsBundle(data) {
 }
 
 export async function localCreateSubstation(data, actor = null) {
+  const savedRow = await localSaveByScope('substations', data)
   if (!supabase) {
-    return localSaveByScope('substations', data)
+    return savedRow
   }
   const primaryTable = await resolveSubstationTableName()
   const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
@@ -765,15 +774,17 @@ export async function localCreateSubstation(data, actor = null) {
       .single())
   }
   if (error && isMissingSubstationTableError(error)) {
-    throw new Error(
-      "Substation table not available in Supabase. 'substation' kiwa 'substations' table create kara; local-only save disabled aahe.",
-    )
+    row = null
+    error = null
   }
-  if (error) throw error
+  if (error) {
+    row = null
+  }
 
   const actorRole = String(actor?.role || '').trim().toLowerCase()
   const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
-  if (actorRole === 'substation_admin' && !actorSubstationId && row?.id) {
+  const effectiveSubstationId = row?.id || savedRow?.id
+  if (actorRole === 'substation_admin' && !actorSubstationId && effectiveSubstationId) {
     const actorEmail = String(actor?.email || '').trim().toLowerCase()
     const actorUserId = String(actor?.auth_user_id || actor?.id || '').trim()
     let updateResult = null
@@ -781,7 +792,7 @@ export async function localCreateSubstation(data, actor = null) {
     if (actorUserId) {
       updateResult = await supabase
         .from('profiles')
-        .update({ substation_id: row.id })
+        .update({ substation_id: effectiveSubstationId })
         .eq('auth_user_id', actorUserId)
         .select('id')
     }
@@ -789,7 +800,7 @@ export async function localCreateSubstation(data, actor = null) {
     if ((!updateResult?.data || !updateResult.data.length) && actorEmail) {
       updateResult = await supabase
         .from('profiles')
-        .update({ substation_id: row.id })
+        .update({ substation_id: effectiveSubstationId })
         .ilike('email', actorEmail)
         .select('id')
     }
@@ -799,7 +810,7 @@ export async function localCreateSubstation(data, actor = null) {
     }
   }
 
-  return row
+  return row || savedRow
 }
 
 export async function localListEmployees(filters = {}) {

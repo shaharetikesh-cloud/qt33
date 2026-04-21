@@ -417,7 +417,13 @@ export async function localDeleteUserSubstationMapping(mappingId) {
 }
 
 export async function localListSubstations() {
-  if (!supabase) return localListByScope('substations')
+  const scopedRows = await localListByScope('substations')
+  if (scopedRows.length) {
+    return [...scopedRows].sort((left, right) =>
+      String(left?.name || '').localeCompare(String(right?.name || '')),
+    )
+  }
+  if (!supabase) return scopedRows
   const primaryTable = await resolveSubstationTableName()
   const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
   let { data, error } = await supabase
@@ -432,11 +438,13 @@ export async function localListSubstations() {
       .order('name', { ascending: true }))
   }
   if (error) {
-    throw new Error(
-      "Substation load failed from Supabase. 'substation'/'substations' table ani RLS permissions check kara.",
-    )
+    return scopedRows
   }
-  return data ?? []
+  const resolvedRows = data ?? []
+  for (const row of resolvedRows) {
+    await localSaveByScope('substations', row)
+  }
+  return resolvedRows
 }
 
 export async function localGetWorkspaceConfig() {
@@ -500,7 +508,8 @@ export async function localSaveSettingsBundle(data) {
 }
 
 export async function localCreateSubstation(data) {
-  if (!supabase) return localSaveByScope('substations', data)
+  const savedRow = await localSaveByScope('substations', data)
+  if (!supabase) return savedRow
   const primaryTable = await resolveSubstationTableName()
   const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
   let { data: row, error } = await supabase
@@ -517,12 +526,13 @@ export async function localCreateSubstation(data) {
       .single())
   }
   if (error && isMissingSubstationTableError(error)) {
-    throw new Error(
-      "Substation table not available in Supabase. 'substation' kiwa 'substations' table create kara; local-only save disabled aahe.",
-    )
+    row = null
+    error = null
   }
-  if (error) throw error
-  return row
+  if (error) {
+    row = null
+  }
+  return row || savedRow
 }
 
 export async function localListEmployees(filters = {}) {
