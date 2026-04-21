@@ -18,7 +18,7 @@ import {
 } from '../lib/uiPreferences'
 import AppIcon from './ui/AppIcon'
 import Qt33OffsiteBrand from './ui/Qt33OffsiteBrand'
-import { subscribeSyncState } from '../lib/syncEngine'
+import { runManualSyncNow, subscribeSyncState } from '../lib/syncEngine'
 
 const defaultGroupState = Object.fromEntries(
   navigationGroups.map((group) => [group.key, true]),
@@ -120,7 +120,13 @@ export default function AppShell() {
     failed: 0,
     syncing: false,
     conflicts: 0,
+    runTotal: 0,
+    runProcessed: 0,
+    runPulled: 0,
+    runPushed: 0,
   })
+  const [manualSyncBusy, setManualSyncBusy] = useState(false)
+  const [manualSyncNote, setManualSyncNote] = useState('')
 
   const isCompactViewport = viewportWidth <= 1080
   const isPhoneViewport = viewportWidth <= 760
@@ -203,9 +209,31 @@ export default function AppShell() {
         failed: state.failed,
         syncing: state.syncing,
         conflicts: state.conflicts,
+        runTotal: state.runTotal || 0,
+        runProcessed: state.runProcessed || 0,
+        runPulled: state.runPulled || 0,
+        runPushed: state.runPushed || 0,
       })
     })
   }, [])
+
+  async function handleManualSync() {
+    if (manualSyncBusy) {
+      return
+    }
+    setManualSyncBusy(true)
+    setManualSyncNote('')
+    try {
+      const summary = await runManualSyncNow()
+      setManualSyncNote(
+        `Sync done: ${summary.runProcessed || 0}/${summary.runTotal || 0} push, pulled ${summary.runPulled || 0}.`,
+      )
+    } catch (error) {
+      setManualSyncNote(error?.message || 'Manual sync failed.')
+    } finally {
+      setManualSyncBusy(false)
+    }
+  }
 
   useEffect(() => {
     function handleWindowClick(event) {
@@ -453,6 +481,19 @@ export default function AppShell() {
                   ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
                   : 'Offline'}
               </span>
+              {syncState.syncing || syncState.runTotal ? (
+                <span>{`Run ${syncState.runProcessed || 0}/${syncState.runTotal || 0} | Pull ${syncState.runPulled || 0}`}</span>
+              ) : null}
+              {manualSyncNote ? <span>{manualSyncNote}</span> : null}
+              <button
+                type="button"
+                className="ghost-light-button small-button"
+                onClick={() => void handleManualSync()}
+                disabled={!syncState.online || manualSyncBusy || syncState.syncing}
+                title="Manual sync now"
+              >
+                {manualSyncBusy || syncState.syncing ? 'Syncing...' : 'Sync now'}
+              </button>
               <span>Substation</span>
               <select
                 id="workspace-substation"

@@ -21,6 +21,10 @@ const syncState = {
   syncing: false,
   conflicts: 0,
   lastSyncAt: '',
+  runTotal: 0,
+  runProcessed: 0,
+  runPulled: 0,
+  runPushed: 0,
 }
 
 function normalizeSyncCursor(cursorValue) {
@@ -198,16 +202,25 @@ export async function triggerSync() {
 
   syncInFlight = true
   syncState.syncing = true
+  syncState.runTotal = 0
+  syncState.runProcessed = 0
+  syncState.runPulled = 0
+  syncState.runPushed = 0
   emitSyncState()
   try {
     const operations = await idbListPendingOutbox(120)
+    syncState.runTotal = operations.length
+    emitSyncState()
     for (const operation of operations) {
       try {
         if (operation.operation_type === 'delete') {
           await applyDelete(operation)
+          syncState.runPushed += 1
         } else {
           const result = await applyUpsert(operation)
           if (result.conflict) {
+            syncState.runProcessed += 1
+            emitSyncState()
             continue
           }
           await idbPutRecord(operation.entity_type || operation.scope, {
@@ -222,6 +235,7 @@ export async function triggerSync() {
             version: Number(result.serverRow?.version || 1),
             deleted: false,
           })
+          syncState.runPushed += 1
         }
         await idbDeleteOutboxItem(operation.queue_id)
       } catch (error) {
@@ -236,10 +250,14 @@ export async function triggerSync() {
             last_error: error instanceof Error ? error.message : 'Sync failed',
           },
         )
+      } finally {
+        syncState.runProcessed += 1
+        emitSyncState()
       }
     }
 
-    await pullServerUpdatesIncremental()
+    const pulledCount = await pullServerUpdatesIncremental()
+    syncState.runPulled = pulledCount
     syncState.lastSyncAt = new Date().toISOString()
   } finally {
     syncInFlight = false
@@ -250,8 +268,9 @@ export async function triggerSync() {
 
 async function pullServerUpdatesIncremental() {
   if (!supabase || !syncState.online) {
-    return
+    return 0
   }
+  let pulledRows = 0
   const scopes = [
     'attendance-sheets',
     'dlr-records',
@@ -301,6 +320,7 @@ async function pullServerUpdatesIncremental() {
           version: row.version || 1,
           deleted: Boolean(row.deleted),
         })
+        pulledRows += 1
       }
 
       cursor = data[data.length - 1].updated_at
@@ -308,6 +328,12 @@ async function pullServerUpdatesIncremental() {
       keepFetching = data.length === 300
     }
   }
+  return pulledRows
+}
+
+export async function runManualSyncNow() {
+  await triggerSync()
+  return { ...syncState }
 }
 
 export async function syncScope(scope) {
