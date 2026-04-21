@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { AuthProvider, useAuth } from './context/AuthContext'
 
@@ -84,7 +84,8 @@ function PublicRoute() {
 }
 
 function ProtectedRoute() {
-  const { session, loading, recoveryMode } = useAuth()
+  const { session, loading, recoveryMode, profile } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return <LoadingScreen />
@@ -92,6 +93,10 @@ function ProtectedRoute() {
 
   if (!session || recoveryMode) {
     return <Navigate to="/login" replace />
+  }
+
+  if (profile?.must_change_password && location.pathname !== '/session') {
+    return <Navigate to="/session" replace />
   }
 
   return (
@@ -121,7 +126,14 @@ export default function App() {
                 </UserManagerPage>
               }
             />
-            <Route path="substations" element={<SubstationsPage />} />
+            <Route
+              path="substations"
+              element={
+                <UserManagerPage>
+                  <SubstationsPage />
+                </UserManagerPage>
+              }
+            />
             <Route
               path="employees"
               element={

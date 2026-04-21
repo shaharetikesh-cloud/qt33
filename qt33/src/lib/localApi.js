@@ -1,6 +1,10 @@
 import {
+  createUserWithEmailAndPassword,
   EmailAuthProvider,
+  fetchSignInMethodsForEmail,
+  sendEmailVerification,
   reauthenticateWithCredential,
+  reload,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
@@ -69,13 +73,62 @@ export async function localSignIn(credentials) {
   }
   const email = credentials.identifier || credentials.username || credentials.email
   const result = await signInWithEmailAndPassword(firebaseAuth, email, credentials.password)
+  await reload(result.user)
+  if (!result.user.emailVerified) {
+    await signOut(firebaseAuth)
+    throw new Error('Email verify kara. Login purvi verification required aahe.')
+  }
   const token = await result.user.getIdToken()
   const { data: profile } = await getProfileByFirebaseUid(result.user.uid)
+  if (profile?.id) {
+    await supabase
+      .from('profiles')
+      .update({ email_verified: true, last_login_at: new Date().toISOString() })
+      .eq('id', profile.id)
+  }
   return { session: { token, user: result.user }, profile: profile || null }
 }
 
-export async function localSignUp() {
-  throw new Error('Self signup disabled. Main Admin can provision users in Firebase Auth.')
+export async function localSignUp(payload) {
+  if (!firebaseAuth || !supabase) {
+    const issues = [firebaseConfigError, supabaseConfigError].filter(Boolean).join(' | ')
+    throw new Error(issues || 'Firebase/Supabase configuration incomplete.')
+  }
+  const email = String(payload?.email || '').trim().toLowerCase()
+  const password = String(payload?.password || '')
+  const fullName = String(payload?.fullName || '').trim()
+  if (!email || !password || !fullName) {
+    throw new Error('Full name, email, ani password required aahe.')
+  }
+  if (password.length < 8) {
+    throw new Error('Password kamit kami 8 characters cha hava.')
+  }
+  const signInMethods = await fetchSignInMethodsForEmail(firebaseAuth, email)
+  if (Array.isArray(signInMethods) && signInMethods.length > 0) {
+    throw new Error('Ha email already register aahe. Krupaya Login kara kiwa Forgot Password vapra.')
+  }
+  const authResult = await createUserWithEmailAndPassword(firebaseAuth, email, password)
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('profiles').upsert(
+    {
+      email,
+      full_name: fullName,
+      role: 'substation_admin',
+      is_active: true,
+      firebase_uid: authResult.user.uid,
+      auth_user_id: authResult.user.uid,
+      updated_at: now,
+      created_at: now,
+    },
+    { onConflict: 'email' },
+  )
+  if (error) {
+    await signOut(firebaseAuth)
+    throw error
+  }
+  await sendEmailVerification(authResult.user)
+  await signOut(firebaseAuth)
+  return { message: 'Signup zala. Verification email pathavla aahe.' }
 }
 
 export async function localSignOut() {
@@ -93,6 +146,12 @@ export async function localUpdatePassword(newPassword) {
   const user = firebaseAuth?.currentUser
   if (!user) throw new Error('Session expired.')
   await updatePassword(user, newPassword)
+  if (supabase) {
+    await supabase
+      .from('profiles')
+      .update({ must_change_password: false })
+      .or(`firebase_uid.eq.${user.uid},auth_user_id.eq.${user.uid}`)
+  }
   return { message: 'Password updated.' }
 }
 
@@ -203,13 +262,56 @@ export async function localGetSessionActivity() {
   return { currentSession: null, activeSessions: [], recentLoginAudit: [], recentAppAudit: [] }
 }
 
+export async function localTrackVisitor() {
+  if (!supabase) {
+    return { totalVisitors: 0, todayVisitors: 0 }
+  }
+  const visitDay = new Date().toISOString().slice(0, 10)
+  const visitorKeyStorage = 'qt33-visitor-key'
+  let visitorKey = window.localStorage.getItem(visitorKeyStorage)
+  if (!visitorKey) {
+    visitorKey = crypto.randomUUID()
+    window.localStorage.setItem(visitorKeyStorage, visitorKey)
+  }
+  await supabase.from('visitor_hits').upsert(
+    {
+      visitor_key: visitorKey,
+      visit_day: visitDay,
+      last_seen_at: new Date().toISOString(),
+    },
+    { onConflict: 'visitor_key,visit_day' },
+  )
+  const [{ count: totalVisitors }, { count: todayVisitors }] = await Promise.all([
+    supabase.from('visitor_hits').select('visitor_key', { count: 'exact', head: true }),
+    supabase.from('visitor_hits').select('visitor_key', { count: 'exact', head: true }).eq('visit_day', visitDay),
+  ]).then((results) => results.map((item) => item || {}))
+  return { totalVisitors: Number(totalVisitors || 0), todayVisitors: Number(todayVisitors || 0) }
+}
+
 export async function localChangePassword(currentPassword, newPassword) {
   const user = firebaseAuth?.currentUser
   if (!user || !user.email) throw new Error('Session unavailable.')
   const credential = EmailAuthProvider.credential(user.email, currentPassword)
   await reauthenticateWithCredential(user, credential)
   await updatePassword(user, newPassword)
+  if (supabase) {
+    await supabase
+      .from('profiles')
+      .update({ must_change_password: false })
+      .or(`firebase_uid.eq.${user.uid},auth_user_id.eq.${user.uid}`)
+  }
   return { message: 'Password updated.' }
+}
+
+export async function localResendVerificationEmail(email) {
+  if (!firebaseAuth) throw new Error('Firebase not configured.')
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const user = firebaseAuth.currentUser
+  if (!user || String(user.email || '').trim().toLowerCase() !== normalizedEmail) {
+    throw new Error('Login kelyanantarach resend verification available aahe.')
+  }
+  await sendEmailVerification(user)
+  return { message: 'Verification email punha pathavla.' }
 }
 
 export async function localListUserSubstationMappings() {

@@ -660,6 +660,40 @@ function syncUserSubstationMapping(userId, substationId) {
   ).run(userId, normalizedSubstationId)
 }
 
+function cascadeDisableManagedUsers(parentUserId, actorUserId) {
+  if (!parentUserId) {
+    return 0
+  }
+  const timestamp = nowIso()
+  const result = db.prepare(
+    `
+      update users
+      set is_active = 0,
+          approval_status = 'inactive',
+          disabled_at = coalesce(disabled_at, ?),
+          disabled_by = coalesce(disabled_by, ?),
+          updated_by = ?,
+          updated_at = ?
+      where deleted_at is null
+        and created_by = ?
+        and id != ?
+    `,
+  ).run(timestamp, actorUserId, actorUserId, timestamp, parentUserId, parentUserId)
+  db.prepare(
+    `
+      delete from sessions
+      where user_id in (
+        select id
+        from users
+        where deleted_at is null
+          and created_by = ?
+          and id != ?
+      )
+    `,
+  ).run(parentUserId, parentUserId)
+  return Number(result?.changes || 0)
+}
+
 function initializeDatabase() {
   db.exec(`
     create table if not exists users (
@@ -2177,7 +2211,7 @@ app.post('/api/admin/users', authenticate, requireUserManager, (request, respons
       request.body.isActive === false ? 'inactive' : 'approved',
     created_by: request.user.id,
     updated_by: request.user.id,
-    must_change_password: request.body.mustChangePassword === true ? 1 : 0,
+    must_change_password: 1,
     password_changed_at: timestamp,
     module_permissions_json: JSON.stringify(permissions),
     created_at: timestamp,
@@ -2366,6 +2400,18 @@ app.put('/api/admin/users/:userId', authenticate, requireUserManager, (request, 
     activeChanged: Boolean(existingUser.is_active) !== Boolean(isActive),
   })
 
+  if (
+    normalizeUserRole(existingUser.role) === ROLE_KEYS.SUBSTATION_ADMIN &&
+    Boolean(existingUser.is_active) &&
+    !Boolean(isActive)
+  ) {
+    const impactedUsers = cascadeDisableManagedUsers(existingUser.id, request.user.id)
+    appAudit('user_cascade_deactivated', request.user, {
+      targetUserId: existingUser.id,
+      impactedUsers,
+    })
+  }
+
   response.json({
     user: mapUserRow(loadUserById(existingUser.id)),
   })
@@ -2484,6 +2530,14 @@ app.delete('/api/admin/users/:userId', authenticate, requireUserManager, (reques
     username: existingUser.username || '',
     substationId: existingUser.substation_id || '',
   })
+
+  if (normalizeUserRole(existingUser.role) === ROLE_KEYS.SUBSTATION_ADMIN) {
+    const impactedUsers = cascadeDisableManagedUsers(existingUser.id, request.user.id)
+    appAudit('user_cascade_deactivated', request.user, {
+      targetUserId: existingUser.id,
+      impactedUsers,
+    })
+  }
 
   response.json({ ok: true })
 })

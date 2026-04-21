@@ -6,11 +6,14 @@ import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
   fetchSignInMethodsForEmail,
+  getAuth,
   reauthenticateWithCredential,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updatePassword,
+  reload,
 } from 'firebase/auth'
 import { firebaseAuth } from './firebase'
 import { firebaseApp } from './firebase'
@@ -199,8 +202,22 @@ export async function localSignIn(credentials) {
   }
 
   const result = await signInWithEmailAndPassword(firebaseAuth, email, credentials.password)
+  await reload(result.user)
+  if (!result.user.emailVerified) {
+    await signOut(firebaseAuth)
+    throw new Error('Email verify kara. Login purvi verification required aahe.')
+  }
   const token = await result.user.getIdToken()
-  const profile = await ensureProfileForFirebaseUser(result.user)
+  const profile = await ensureProfileForFirebaseUser(result.user, { emailVerified: true })
+  if (profile?.id) {
+    await supabase
+      .from('profiles')
+      .update({
+        email_verified: true,
+        last_login_at: new Date().toISOString(),
+      })
+      .eq('id', profile.id)
+  }
   return { session: { token, user: result.user }, profile: profile || null }
 }
 
@@ -214,7 +231,7 @@ export async function localSignUp(payload) {
   const password = String(payload?.password || '')
   const fullName = String(payload?.fullName || '').trim()
   const requestedRole = String(payload?.requestedRole || '').trim().toLowerCase()
-  const allowedRoles = ['super_admin', 'substation_admin']
+  const allowedRoles = ['substation_admin']
 
   if (!email || !password || !fullName) {
     throw new Error('Full name, email, ani password required aahe.')
@@ -225,7 +242,7 @@ export async function localSignUp(payload) {
   }
 
   if (!allowedRoles.includes(requestedRole)) {
-    throw new Error('Signup madhye fakta Main Admin kiwa Substation Admin role select kara.')
+    throw new Error('Public signup madhye fakta Substation Admin role allowed aahe.')
   }
 
   const signInMethods = await fetchSignInMethodsForEmail(firebaseAuth, email)
@@ -254,7 +271,7 @@ export async function localSignUp(payload) {
     throw existingProfileError
   }
 
-  const signupRole = requestedRole === 'super_admin' ? 'super_admin' : 'substation_admin'
+  const signupRole = 'substation_admin'
   const row = {
     email,
     full_name: fullName,
@@ -283,10 +300,12 @@ export async function localSignUp(payload) {
     throw profileSaveError
   }
 
+  await sendEmailVerification(authResult.user)
+
   await signOut(firebaseAuth)
   return {
     message:
-      'Signup request submit zala. 15 divas trial start hoil approval nantar. Nantar paid subscription required asel.',
+      'Signup zala. Verification email pathavla aahe. Email verify kelanantarach login karta yeil.',
   }
 }
 
@@ -305,6 +324,12 @@ export async function localUpdatePassword(newPassword) {
   const user = firebaseAuth?.currentUser
   if (!user) throw new Error('Session expired.')
   await updatePassword(user, newPassword)
+  if (supabase && user.uid) {
+    await supabase
+      .from('profiles')
+      .update({ must_change_password: false })
+      .or(`firebase_uid.eq.${user.uid},auth_user_id.eq.${user.uid}`)
+  }
   return { message: 'Password updated.' }
 }
 
@@ -458,7 +483,64 @@ export async function localChangePassword(currentPassword, newPassword) {
   const credential = EmailAuthProvider.credential(user.email, currentPassword)
   await reauthenticateWithCredential(user, credential)
   await updatePassword(user, newPassword)
+  if (supabase && user.uid) {
+    await supabase
+      .from('profiles')
+      .update({ must_change_password: false })
+      .or(`firebase_uid.eq.${user.uid},auth_user_id.eq.${user.uid}`)
+  }
   return { message: 'Password updated.' }
+}
+
+export async function localResendVerificationEmail(email) {
+  if (!firebaseAuth) throw new Error('Firebase not configured.')
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  if (!normalizedEmail) {
+    throw new Error('Email required aahe.')
+  }
+  const user = firebaseAuth.currentUser
+  if (!user || String(user.email || '').trim().toLowerCase() !== normalizedEmail) {
+    throw new Error('Login kelyanantarach resend verification available aahe.')
+  }
+  await sendEmailVerification(user)
+  return { message: 'Verification email punha pathavla.' }
+}
+
+export async function localTrackVisitor() {
+  if (!supabase) {
+    return { totalVisitors: 0, todayVisitors: 0 }
+  }
+  const visitDay = new Date().toISOString().slice(0, 10)
+  const visitorKeyStorage = 'qt33-visitor-key'
+  let visitorKey = window.localStorage.getItem(visitorKeyStorage)
+  if (!visitorKey) {
+    visitorKey = crypto.randomUUID()
+    window.localStorage.setItem(visitorKeyStorage, visitorKey)
+  }
+
+  await supabase
+    .from('visitor_hits')
+    .upsert(
+      {
+        visitor_key: visitorKey,
+        visit_day: visitDay,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'visitor_key,visit_day' },
+    )
+
+  const [{ count: totalVisitors }, { count: todayVisitors }] = await Promise.all([
+    supabase.from('visitor_hits').select('visitor_key', { count: 'exact', head: true }),
+    supabase
+      .from('visitor_hits')
+      .select('visitor_key', { count: 'exact', head: true })
+      .eq('visit_day', visitDay),
+  ]).then((results) => results.map((item) => item || {}))
+
+  return {
+    totalVisitors: Number(totalVisitors || 0),
+    todayVisitors: Number(todayVisitors || 0),
+  }
 }
 
 export async function localListUserSubstationMappings() {

@@ -13,6 +13,7 @@ export default function LoginPage() {
     signIn,
     signUp,
     requestPasswordReset,
+    resendVerificationEmail,
     updatePassword,
   } = useAuth()
   const [mode, setMode] = useState('login')
@@ -30,6 +31,7 @@ export default function LoginPage() {
     requestedRole: 'substation_admin',
   })
   const [forgotEmail, setForgotEmail] = useState('')
+  const [verificationEmail, setVerificationEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const runtimeConfigError = [firebaseConfigError, supabaseConfigError].filter(Boolean).join(' | ')
@@ -59,7 +61,7 @@ export default function LoginPage() {
       setStatus(
         isLocalSqlMode
           ? 'Signup request submit zala. Approval nantar 15 divas trial var login karta yeil.'
-          : 'Account request create zala. Admin approval kiwa email confirmation nantar login kara.',
+          : 'Account request create zala. Email verify nantarach dashboard login allow asel.',
       )
       setMode('login')
     } catch (submitError) {
@@ -80,6 +82,18 @@ export default function LoginPage() {
               'Local recovery mode start zali. Ata navi password set kara.'
           : 'Password reset email pathavla aahe. Mail madhil link open karun navi password set kara.',
       )
+    } catch (submitError) {
+      setError(submitError.message)
+    }
+  }
+
+  async function handleResendVerification(event) {
+    event.preventDefault()
+    setStatus('')
+    setError('')
+    try {
+      const result = await resendVerificationEmail(verificationEmail)
+      setStatus(result?.message || 'Verification email punha pathavla.')
     } catch (submitError) {
       setError(submitError.message)
     }
@@ -235,15 +249,25 @@ export default function LoginPage() {
             <button type="submit" className="primary-button" disabled={authBusy}>
               {authBusy ? 'Signing in...' : 'Login'}
             </button>
+            <div className="callout info-callout">
+              <p>Email verify zalyavarach dashboard access milto.</p>
+            </div>
 
-            {isLocalSqlMode ? (
-              <div className="callout warning-callout">
-                <p>
-                  Forgot password local mode madhye self-service nahi. Temporary password reset
-                  sathi Main Admin kiwa assigned Substation Admin la contact kara.
-                </p>
+            <div>
+              <label htmlFor="resend-verification-email">Resend verification email</label>
+              <div className="inline-actions">
+                <input
+                  id="resend-verification-email"
+                  type="email"
+                  value={verificationEmail}
+                  onChange={(event) => setVerificationEmail(event.target.value)}
+                  placeholder="Email for verification"
+                />
+                <button type="button" className="ghost-light-button" onClick={handleResendVerification}>
+                  Resend
+                </button>
               </div>
-            ) : null}
+            </div>
           </form>
         ) : null}
 
@@ -309,29 +333,12 @@ export default function LoginPage() {
                 required
               />
             </div>
-            <div>
-              <label htmlFor="signup-role">Requested role</label>
-              <select
-                id="signup-role"
-                value={signupForm.requestedRole}
-                onChange={(event) =>
-                  setSignupForm((current) => ({
-                    ...current,
-                    requestedRole: event.target.value,
-                  }))
-                }
-                required
-              >
-                <option value="substation_admin">Substation Admin</option>
-                <option value="super_admin">Main Admin</option>
-              </select>
-            </div>
             <button type="submit" className="primary-button" disabled={authBusy}>
               {authBusy ? 'Creating request...' : 'Create account request'}
             </button>
             <div className="callout info-callout">
               <p>
-                Signup madhye fakta Main Admin kiwa Substation Admin role request karta yeil.
+                Public signup madhye fakta Substation Admin role allowed aahe.
                 Approval nantar 15-day trial active hoil. Trial samplya nantar subscription required.
               </p>
             </div>

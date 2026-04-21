@@ -184,6 +184,7 @@ export default function UsersPage() {
           isActive: form.isActive,
           substationId: isMainAdmin ? form.substationId : actorSubstationId,
           allowDelete: form.allowDelete,
+          mustChangePassword: true,
         })
 
         startTransition(() => {
@@ -378,7 +379,7 @@ export default function UsersPage() {
             {!editingUser ? (
               <>
                 <div>
-                  <label htmlFor="user-password">Password</label>
+                  <label htmlFor="user-password">Temporary Password</label>
                   <input
                     id="user-password"
                     type="password"
@@ -394,7 +395,7 @@ export default function UsersPage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="user-confirm-password">Confirm Password</label>
+                  <label htmlFor="user-confirm-password">Confirm Temporary Password</label>
                   <input
                     id="user-confirm-password"
                     type="password"

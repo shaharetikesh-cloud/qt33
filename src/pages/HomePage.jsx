@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { localGetDashboardSummary } from '../lib/localApi'
+import { localGetDashboardSummary, localTrackVisitor } from '../lib/localApi'
 import { isLocalSqlMode } from '../lib/runtimeConfig'
 import {
   listDlrRecords,
@@ -61,6 +61,7 @@ export default function HomePage() {
     openFeedback: 0,
     recentLogins24h: 0,
   })
+  const [visitorStats, setVisitorStats] = useState({ totalVisitors: 0, todayVisitors: 0 })
 
   const dashboardTitle = isMainAdmin
     ? 'Main Admin dashboard for all substations and users.'
@@ -106,6 +107,14 @@ export default function HomePage() {
     let active = true
 
     async function loadSummary() {
+      try {
+        const visitors = await localTrackVisitor()
+        if (active) {
+          setVisitorStats(visitors)
+        }
+      } catch {
+        // ignore visitor metric failures to keep dashboard resilient
+      }
       const [dailyLogs, faultRows] = await Promise.all([
         canViewDailyLog ? loadDlrRecords({ moduleName: 'daily_log', profile }) : Promise.resolve([]),
         canViewFaults ? loadDlrRecords({ moduleName: 'fault', profile }) : Promise.resolve([]),
@@ -274,6 +283,17 @@ export default function HomePage() {
             )}
           </div>
         </article>
+      </section>
+
+      <section className="content-card">
+        <p className="muted-copy">
+          Contact: qt33support@gmail.com | Visitors: {visitorStats.totalVisitors} total /{' '}
+          {visitorStats.todayVisitors} today | YouTube:{' '}
+          <a href="https://www.youtube.com/@qt33official" target="_blank" rel="noreferrer">
+            @qt33official
+          </a>
+        </p>
+        <p className="muted-copy">Copyright 2026 QT33 Unified MSEDCL Workspace.</p>
       </section>
     </div>
   )

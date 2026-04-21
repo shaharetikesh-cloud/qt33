@@ -8,6 +8,7 @@ import {
   localDeleteUser,
   localListUsers,
   localRequestPasswordReset,
+  localResendVerificationEmail,
   localResetUserPassword,
   localSignIn,
   localSignOut,
@@ -110,6 +111,11 @@ export function AuthProvider({ children }) {
 
   const bootstrapLocalSession = useCallback(async () => {
     const payload = await fetchLocalSession()
+    if (payload?.session?.user && !payload.session.user.emailVerified) {
+      await localSignOut()
+      applyAuthPayload({ session: null, profile: null })
+      throw new Error('Email verify kelya nantarach dashboard access milel.')
+    }
     applyAuthPayload(payload)
     setRecoveryMode(false)
   }, [applyAuthPayload])
@@ -309,6 +315,18 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function resendVerificationEmail(email) {
+    setAuthBusy(true)
+    try {
+      if (isLocalSqlMode) {
+        return localResendVerificationEmail(email)
+      }
+      throw new Error('Resend verification local mode sathi configured aahe.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
   async function updatePassword(newPassword) {
     setAuthBusy(true)
 
@@ -462,6 +480,7 @@ export function AuthProvider({ children }) {
     signOut,
     refreshProfile,
     requestPasswordReset,
+    resendVerificationEmail,
     updatePassword,
     changePassword,
     listUsers,

@@ -13,6 +13,7 @@ export default function LoginPage() {
     signIn,
     signUp,
     requestPasswordReset,
+    resendVerificationEmail,
     updatePassword,
   } = useAuth()
   const [mode, setMode] = useState('login')
@@ -29,11 +30,12 @@ export default function LoginPage() {
     password: '',
   })
   const [forgotEmail, setForgotEmail] = useState('')
+  const [verificationEmail, setVerificationEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const runtimeConfigError = [firebaseConfigError, supabaseConfigError].filter(Boolean).join(' | ')
 
-  const currentMode = isLocalSqlMode ? 'login' : recoveryMode ? 'recovery' : mode
+  const currentMode = recoveryMode ? 'recovery' : mode
 
   async function handleLoginSubmit(event) {
     event.preventDefault()
@@ -57,7 +59,7 @@ export default function LoginPage() {
       await signUp(signupForm)
       setStatus(
         isLocalSqlMode
-          ? 'Local account tayar zala. Ata tyach credentials ne login karu shakta.'
+          ? 'Signup zala. Verification email check kara. Verify zalyashivay dashboard access milnar nahi.'
           : 'Account request create zala. Admin approval kiwa email confirmation nantar login kara.',
       )
       setMode('login')
@@ -79,6 +81,18 @@ export default function LoginPage() {
               'Local recovery mode start zali. Ata navi password set kara.'
           : 'Password reset email pathavla aahe. Mail madhil link open karun navi password set kara.',
       )
+    } catch (submitError) {
+      setError(submitError.message)
+    }
+  }
+
+  async function handleResendVerification(event) {
+    event.preventDefault()
+    setStatus('')
+    setError('')
+    try {
+      const result = await resendVerificationEmail(verificationEmail)
+      setStatus(result?.message || 'Verification email punha pathavla.')
     } catch (submitError) {
       setError(submitError.message)
     }
@@ -144,18 +158,10 @@ export default function LoginPage() {
           </article>
         </div>
 
-        {isLocalSqlMode ? (
-          <div className="callout info-callout">
-            <h2>Default local admin</h2>
-            <p>Username: admin</p>
-            <p>Password: Admin@12345</p>
-          </div>
-        ) : null}
       </section>
 
       <section className="auth-card">
-        {!isLocalSqlMode ? (
-          <div className="auth-tabs">
+        <div className="auth-tabs">
             <button
               type="button"
               className={
@@ -187,7 +193,6 @@ export default function LoginPage() {
               Forgot
             </button>
           </div>
-        ) : null}
 
         {runtimeConfigError ? (
           <div className="callout warning-callout">
@@ -243,6 +248,24 @@ export default function LoginPage() {
             <button type="submit" className="primary-button" disabled={authBusy}>
               {authBusy ? 'Signing in...' : 'Login'}
             </button>
+            <div className="callout info-callout">
+              <p>Email verify zalyavarach dashboard access milto.</p>
+            </div>
+            <div>
+              <label htmlFor="resend-verification-email">Resend verification email</label>
+              <div className="inline-actions">
+                <input
+                  id="resend-verification-email"
+                  type="email"
+                  value={verificationEmail}
+                  onChange={(event) => setVerificationEmail(event.target.value)}
+                  placeholder="Email for verification"
+                />
+                <button type="button" className="ghost-light-button" onClick={handleResendVerification}>
+                  Resend
+                </button>
+              </div>
+            </div>
 
             {isLocalSqlMode ? (
               <div className="callout warning-callout">
