@@ -382,6 +382,58 @@ export async function idbListPendingOutbox(limit = 100) {
     .slice(0, limit)
 }
 
+export async function idbRequeueFailedOutbox() {
+  const now = Date.now()
+  const db = await openDb()
+  if (!db) {
+    const snapshot = await readPreferencesSnapshot()
+    let changed = 0
+    const next = (snapshot.outbox || []).map((row) => {
+      if (row.sync_status !== 'failed') {
+        return row
+      }
+      changed += 1
+      return {
+        ...row,
+        sync_status: 'pending',
+        retry_count: 0,
+        next_retry_at: now,
+        last_error: '',
+      }
+    })
+    if (changed > 0) {
+      await writePreferencesSnapshot({
+        ...snapshot,
+        outbox: next,
+      })
+    }
+    return changed
+  }
+
+  const tx = db.transaction([OUTBOX_STORE], 'readwrite')
+  const store = tx.objectStore(OUTBOX_STORE)
+  const rows = await requestToPromise(store.getAll())
+  let changed = 0
+  for (const row of rows || []) {
+    if (row.sync_status !== 'failed') {
+      continue
+    }
+    changed += 1
+    store.put({
+      ...row,
+      sync_status: 'pending',
+      retry_count: 0,
+      next_retry_at: now,
+      last_error: '',
+    })
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
+  return changed
+}
+
 export async function idbUpdateOutboxStatus(queueId, status, patch = {}) {
   const db = await openDb()
   if (!db) {

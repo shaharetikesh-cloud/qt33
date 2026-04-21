@@ -1,6 +1,7 @@
 import {
   idbDeleteOutboxItem,
   idbGetMeta,
+  idbRequeueFailedOutbox,
   idbGetSyncCounts,
   idbListPendingOutbox,
   idbPutRecord,
@@ -376,6 +377,7 @@ async function pullServerUpdatesIncremental() {
 }
 
 export async function runManualSyncNow() {
+  await idbRequeueFailedOutbox()
   await triggerSync()
   return { ...syncState }
 }
