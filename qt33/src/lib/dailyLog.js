@@ -1687,7 +1687,116 @@ export function listDailyLogRecords(records = [], substationId) {
     .sort((left, right) => compareByDate(right.operationalDate, left.operationalDate))
 }
 
-export function findCarryForwardSnapshot(records, substationId, operationalDate) {
+function normalizeFeederLookupToken(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function createFeederIdAliasMap(record, currentFeeders = []) {
+  const aliasMap = new Map()
+
+  currentFeeders.forEach((feeder) => {
+    if (feeder?.id) {
+      aliasMap.set(feeder.id, feeder.id)
+    }
+  })
+
+  const currentByCode = new Map()
+  const currentByName = new Map()
+  currentFeeders.forEach((feeder) => {
+    if (!feeder?.id) {
+      return
+    }
+
+    const codeKey = normalizeFeederLookupToken(feeder.code)
+    const nameKey = normalizeFeederLookupToken(feeder.name)
+
+    if (codeKey && !currentByCode.has(codeKey)) {
+      currentByCode.set(codeKey, feeder.id)
+    }
+    if (nameKey && !currentByName.has(nameKey)) {
+      currentByName.set(nameKey, feeder.id)
+    }
+  })
+
+  const snapshotFeeders = Array.isArray(record?.feederSnapshot)
+    ? record.feederSnapshot
+    : []
+
+  snapshotFeeders.forEach((snapshotFeeder) => {
+    const sourceId = String(snapshotFeeder?.id || '').trim()
+    if (!sourceId || aliasMap.has(sourceId)) {
+      return
+    }
+
+    const codeKey = normalizeFeederLookupToken(snapshotFeeder?.code)
+    const nameKey = normalizeFeederLookupToken(snapshotFeeder?.name)
+    const targetId =
+      (codeKey && currentByCode.get(codeKey)) ||
+      (nameKey && currentByName.get(nameKey)) ||
+      ''
+
+    if (targetId) {
+      aliasMap.set(sourceId, targetId)
+    }
+  })
+
+  return aliasMap
+}
+
+function remapRowFeederReadingsForCurrentConfig(rows = [], record, currentFeeders = []) {
+  if (!rows.length || !currentFeeders.length) {
+    return rows
+  }
+
+  const aliasMap = createFeederIdAliasMap(record, currentFeeders)
+
+  return rows.map((row) => {
+    const readings = row?.feederReadings || {}
+    const nextFeederReadings = {}
+
+    Object.entries(readings).forEach(([sourceFeederId, reading]) => {
+      const targetFeederId = aliasMap.get(sourceFeederId) || sourceFeederId
+      if (!targetFeederId || nextFeederReadings[targetFeederId]) {
+        return
+      }
+      nextFeederReadings[targetFeederId] = reading
+    })
+
+    return {
+      ...row,
+      feederReadings: nextFeederReadings,
+    }
+  })
+}
+
+function remapFeederEventIds(events = [], record, currentFeeders = []) {
+  if (!events.length || !currentFeeders.length) {
+    return events
+  }
+
+  const aliasMap = createFeederIdAliasMap(record, currentFeeders)
+
+  return events.map((event) => {
+    const sourceFeederId = event?.feederId || event?.feeder_id || ''
+    const targetFeederId = aliasMap.get(sourceFeederId) || sourceFeederId
+    const selectedFeederIds = Array.isArray(event?.selectedFeederIds)
+      ? event.selectedFeederIds.map((id) => aliasMap.get(id) || id).filter(Boolean)
+      : []
+    const affectedFeederIds = Array.isArray(event?.affectedFeederIds)
+      ? event.affectedFeederIds.map((id) => aliasMap.get(id) || id).filter(Boolean)
+      : []
+
+    return {
+      ...event,
+      feederId: targetFeederId,
+      feeder_id: targetFeederId,
+      selectedFeederIds,
+      affectedFeederIds,
+    }
+  })
+}
+
+export function findCarryForwardSnapshot(records, substationId, operationalDate, feeders = []) {
   const priorRecords = listDailyLogRecords(records, substationId).filter(
     (record) => record.operationalDate < operationalDate,
   )
@@ -1706,7 +1815,12 @@ export function findCarryForwardSnapshot(records, substationId, operationalDate)
     priorRecords.find((record) => record.operationalDate === previousDayLabel) || priorRecords[0]
 
   const valuesByFeederId = {}
-  const rows = preferredRecord?.payload?.manualRows || preferredRecord?.payload?.rows || []
+  const originalRows = preferredRecord?.payload?.manualRows || preferredRecord?.payload?.rows || []
+  const rows = remapRowFeederReadingsForCurrentConfig(
+    originalRows,
+    preferredRecord,
+    feeders,
+  )
 
   for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
     const row = rows[rowIndex]
@@ -1745,12 +1859,22 @@ export function createDailyLogFormState({
     batterySets,
     transformers,
   })
-  const carryForward = findCarryForwardSnapshot(records, substationId, operationalDate)
+  const carryForward = findCarryForwardSnapshot(
+    records,
+    substationId,
+    operationalDate,
+    config.feeders,
+  )
   const rows = DAILY_LOG_HOURS.map((hour) => createEmptyRow(config, hour))
 
-  const storedRows =
+  const originalStoredRows =
     existingRecord?.payload?.manualRows ||
     stripDerivedRows(existingRecord?.payload?.rows || [], config)
+  const storedRows = remapRowFeederReadingsForCurrentConfig(
+    originalStoredRows,
+    existingRecord,
+    config.feeders,
+  )
   const baseRows = rows.map((row, rowIndex) =>
     normalizeRow(storedRows?.[rowIndex], config, row.hour),
   )
@@ -1791,8 +1915,16 @@ export function createDailyLogFormState({
     approvalStatus: existingRecord?.payload?.approvalStatus || 'draft',
     dayStatus: existingRecord?.payload?.dayStatus || 'draft',
     rows: baseRows,
-    interruptions: cloneValue(existingRecord?.payload?.interruptions || []),
-    meterChangeEvents: cloneValue(existingRecord?.payload?.meterChangeEvents || []),
+    interruptions: remapFeederEventIds(
+      cloneValue(existingRecord?.payload?.interruptions || []),
+      existingRecord,
+      config.feeders,
+    ),
+    meterChangeEvents: remapFeederEventIds(
+      cloneValue(existingRecord?.payload?.meterChangeEvents || []),
+      existingRecord,
+      config.feeders,
+    ),
     carryForwardSource: carryForward.record
       ? {
           operationalDate: carryForward.record.operationalDate,

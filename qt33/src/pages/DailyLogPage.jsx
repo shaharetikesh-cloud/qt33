@@ -413,7 +413,12 @@ export default function DailyLogPage() {
   })
   const derivedState = deriveDailyLogState(form, config)
   const substation = referenceData.substations.find((item) => item.id === form.substationId)
-  const carryForwardSnapshot = findCarryForwardSnapshot(records, form.substationId, form.operationalDate)
+  const carryForwardSnapshot = findCarryForwardSnapshot(
+    records,
+    form.substationId,
+    form.operationalDate,
+    feeders,
+  )
   const todayIsoDate = formatIsoDate(currentTime)
   const activeHour =
     form.operationalDate === todayIsoDate
