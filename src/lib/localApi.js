@@ -58,6 +58,16 @@ async function resolveSubstationTableName() {
   return substationTableNameCache
 }
 
+function isMissingSubstationTableError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    message.includes("could not find the table 'public.substations'") ||
+    message.includes("could not find the table 'public.substation'") ||
+    message.includes('relation "public.substations" does not exist') ||
+    message.includes('relation "public.substation" does not exist')
+  )
+}
+
 function isAdminFunctionsEnabled() {
   return String(import.meta.env.VITE_SUPABASE_ADMIN_FUNCTIONS || '').toLowerCase() === 'true'
 }
@@ -580,8 +590,21 @@ export async function localDeleteUserSubstationMapping(mappingId) {
 
 export async function localListSubstations() {
   if (!supabase) return localListByScope('substations')
-  const tableName = await resolveSubstationTableName()
-  const { data, error } = await supabase.from(tableName).select('*').order('name', { ascending: true })
+  const primaryTable = await resolveSubstationTableName()
+  const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
+  let { data, error } = await supabase
+    .from(primaryTable)
+    .select('*')
+    .order('name', { ascending: true })
+
+  if (error && isMissingSubstationTableError(error)) {
+    substationTableNameCache = fallbackTable
+    ;({ data, error } = await supabase
+      .from(fallbackTable)
+      .select('*')
+      .order('name', { ascending: true }))
+  }
+
   if (error) return localListByScope('substations')
   return data ?? []
 }
@@ -609,8 +632,22 @@ export async function localSaveSettingsBundle(data) {
 
 export async function localCreateSubstation(data, actor = null) {
   if (!supabase) throw new Error('Supabase not configured.')
-  const tableName = await resolveSubstationTableName()
-  const { data: row, error } = await supabase.from(tableName).insert(data).select('*').single()
+  const primaryTable = await resolveSubstationTableName()
+  const fallbackTable = primaryTable === 'substations' ? 'substation' : 'substations'
+  let { data: row, error } = await supabase
+    .from(primaryTable)
+    .insert(data)
+    .select('*')
+    .single()
+
+  if (error && isMissingSubstationTableError(error)) {
+    substationTableNameCache = fallbackTable
+    ;({ data: row, error } = await supabase
+      .from(fallbackTable)
+      .insert(data)
+      .select('*')
+      .single())
+  }
   if (error) throw error
 
   const actorRole = String(actor?.role || '').trim().toLowerCase()

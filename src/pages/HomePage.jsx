@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { localGetDashboardSummary, localTrackVisitor } from '../lib/localApi'
+import AppIcon from '../components/ui/AppIcon'
 import { isLocalSqlMode } from '../lib/runtimeConfig'
 import {
   listDlrRecords,
@@ -287,10 +288,16 @@ export default function HomePage() {
 
       <section className="content-card">
         <p className="muted-copy">
-          Contact: qt33support@gmail.com | Visitors: {visitorStats.totalVisitors} total /{' '}
-          {visitorStats.todayVisitors} today | YouTube:{' '}
-          <a href="https://www.youtube.com/@qt33official" target="_blank" rel="noreferrer">
-            @qt33official
+          Contact: qt33dlrerp@gmail.com | Visitors: {visitorStats.totalVisitors} total /{' '}
+          {visitorStats.todayVisitors} today |{' '}
+          <a
+            href="https://youtube.com/@qt-unifiedsubstationerp?si=AMl-m0btmMKwHAjh"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open YouTube channel"
+            title="YouTube"
+          >
+            <AppIcon name="youtube" size={14} />
           </a>
         </p>
         <p className="muted-copy">Copyright 2026 QT33 Unified MSEDCL Workspace.</p>
