@@ -690,11 +690,44 @@ async function localDeleteByScope(scope, id) {
   scheduleSync()
 }
 
+async function ensureLegacyRecordCloudMirror(scope, records) {
+  if (!supabase || !navigator.onLine || !Array.isArray(records) || !records.length) {
+    return
+  }
+  let enqueued = false
+  for (const row of records) {
+    if (
+      row?.deleted ||
+      row?.server_received_at ||
+      !row?.id ||
+      !row?.payload ||
+      typeof row.payload !== 'object'
+    ) {
+      continue
+    }
+    await idbQueueUpsert(scope, {
+      id: row.id,
+      payload: row.payload,
+      operation_type: 'update',
+      updated_at: row.updated_at || new Date().toISOString(),
+      client_updated_at: row.client_updated_at || row.updated_at || new Date().toISOString(),
+      base_server_updated_at: '',
+      device_id: row.device_id || getDeviceId(),
+      updated_by: row.updated_by || firebaseAuth?.currentUser?.uid || '',
+    })
+    enqueued = true
+  }
+  if (enqueued) {
+    scheduleSync(50)
+  }
+}
+
 async function localListByScope(scope) {
   if (supabase && navigator.onLine) {
     await syncScope(scope)
   }
   const records = await idbListRecords(scope)
+  await ensureLegacyRecordCloudMirror(scope, records)
   return records
     .filter((row) => !row.deleted)
     .map((row) => ({
