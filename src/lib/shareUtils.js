@@ -52,6 +52,24 @@ export async function shareBlob(blob, filename, title) {
   downloadBlob(blob, filename)
 }
 
+export async function shareFileUri(uri, filename, title) {
+  if (!uri) {
+    throw new Error('Share sathi file uri unavailable aahe.')
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    await Share.share({
+      title,
+      text: title,
+      url: uri,
+      dialogTitle: title,
+    })
+    return
+  }
+
+  throw new Error('shareFileUri is intended for native runtime.')
+}
+
 export async function saveBlobToDevice(blob, filename) {
   if (!blob) {
     throw new Error('Save sathi file generate zali nahi.')

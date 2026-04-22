@@ -5,9 +5,10 @@ import { exportCsv, exportJson, exportWorkbook } from '../../lib/exportUtils'
 import { exportElementToPdf } from '../../lib/reportPdf'
 import {
   openBlobInNewTab,
-  printElementInBrowser,
+  printBlobInBrowser,
   saveBlobToDevice,
   shareBlob,
+  shareFileUri,
 } from '../../lib/shareUtils'
 import { saveReportSnapshot } from '../../lib/unifiedDataService'
 
@@ -84,14 +85,12 @@ export default function ReportActions({
 
   async function handlePrintPdf() {
     await runAsyncAction('print', async () => {
+      const blob = await buildPdfBlob()
       if (nativePlatform) {
-        const blob = await buildPdfBlob()
-        await shareBlob(blob, `${filenameBase}.pdf`, filenameBase)
+        const uri = await saveBlobToDevice(blob, `${filenameBase}.pdf`)
+        await shareFileUri(uri, `${filenameBase}.pdf`, `${filenameBase} (Print)`)
       } else {
-        printElementInBrowser(documentRef.current, {
-          orientation,
-          pageSize,
-        })
+        printBlobInBrowser(blob)
       }
 
       await recordSnapshot('print_pdf')
@@ -129,7 +128,7 @@ export default function ReportActions({
             ? 'Preparing...'
             : 'Opening print...'
           : nativePlatform
-            ? 'Print via Share'
+            ? 'Print / Share PDF'
             : 'Print'}
       </button>
       <button

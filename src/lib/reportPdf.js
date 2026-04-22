@@ -1,6 +1,8 @@
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
+const REPORT_RENDER_SCALE = 2
+
 async function waitForReportAssets(element) {
   if (document.fonts?.ready) {
     try {
@@ -74,12 +76,21 @@ async function renderCanvas(element) {
 
     const width = Math.max(Math.ceil(clone.scrollWidth || 0), Math.ceil(clone.clientWidth || 0), 1)
     const height = Math.max(Math.ceil(clone.scrollHeight || 0), Math.ceil(clone.clientHeight || 0), 1)
+    const cloneRect = clone.getBoundingClientRect()
+    const rowAnchors = Array.from(
+      clone.querySelectorAll('tbody tr, .report-table tr, .daily-log-entry-table tr, [data-report-row="true"]'),
+    )
+      .map((row) => {
+        const rowRect = row.getBoundingClientRect()
+        return Math.max(Math.floor((rowRect.top - cloneRect.top) * REPORT_RENDER_SCALE), 0)
+      })
+      .filter((value) => Number.isFinite(value))
 
     clone.style.width = `${width}px`
 
-    return await html2canvas(clone, {
+    const canvas = await html2canvas(clone, {
       backgroundColor: '#ffffff',
-      scale: 2,
+      scale: REPORT_RENDER_SCALE,
       useCORS: true,
       logging: false,
       width,
@@ -103,9 +114,49 @@ async function renderCanvas(element) {
         clonedReport.style.visibility = 'visible'
       },
     })
+
+    return {
+      canvas,
+      rowAnchors,
+    }
   } finally {
     cleanup()
   }
+}
+
+function buildPageSlices(totalHeightPx, pageHeightPx, rowAnchors = []) {
+  const slices = []
+  let offsetY = 0
+  const minSlicePx = Math.floor(pageHeightPx * 0.6)
+  const sortedAnchors = [...new Set(rowAnchors)].sort((left, right) => left - right)
+
+  while (offsetY < totalHeightPx) {
+    const targetBottom = Math.min(offsetY + pageHeightPx, totalHeightPx)
+    if (targetBottom >= totalHeightPx) {
+      slices.push({
+        offsetY,
+        sliceHeightPx: totalHeightPx - offsetY,
+      })
+      break
+    }
+
+    const candidateBreak = sortedAnchors
+      .filter((anchor) => anchor > offsetY + 10 && anchor < targetBottom)
+      .pop()
+
+    const effectiveBottom =
+      candidateBreak && candidateBreak - offsetY >= minSlicePx
+        ? candidateBreak
+        : targetBottom
+
+    slices.push({
+      offsetY,
+      sliceHeightPx: Math.max(effectiveBottom - offsetY, 1),
+    })
+    offsetY = effectiveBottom
+  }
+
+  return slices
 }
 
 export async function exportElementToPdf(element, options = {}) {
@@ -122,7 +173,7 @@ export async function exportElementToPdf(element, options = {}) {
     compress: true,
   })
 
-  const canvas = await renderCanvas(element)
+  const { canvas, rowAnchors } = await renderCanvas(element)
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
   const pxPerMm = canvas.width / pageWidth
@@ -130,8 +181,10 @@ export async function exportElementToPdf(element, options = {}) {
 
   let pageIndex = 0
 
-  for (let offsetY = 0; offsetY < canvas.height; offsetY += pageHeightPx) {
-    const sliceHeightPx = Math.min(pageHeightPx, canvas.height - offsetY)
+  const slices = buildPageSlices(canvas.height, pageHeightPx, rowAnchors)
+
+  for (const slice of slices) {
+    const { offsetY, sliceHeightPx } = slice
     const pageCanvas = document.createElement('canvas')
     pageCanvas.width = canvas.width
     pageCanvas.height = sliceHeightPx

@@ -340,6 +340,8 @@ async function pullServerUpdatesIncremental() {
     'masters:transformers',
     'substations',
     'audit-events',
+    'asset-master',
+    'asset-history',
   ]
 
   for (const scope of scopes) {

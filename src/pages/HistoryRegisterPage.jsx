@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { alertDetailSaved } from '../lib/detailSavedAlert'
+import { localGetScopeSnapshot, localSaveScopeSnapshot } from '../lib/localApi'
 import { loadReferenceData } from '../lib/unifiedDataService'
 import { resolvePreferredSubstationId } from '../lib/uiPreferences'
 import { readScope, writeScope, createLocalId, getNowIso } from '../lib/storageAdapter'
@@ -26,6 +27,11 @@ function readAssets()           { return readScope(ASSET_SCOPE,   []) }
 function writeAssets(v)         { writeScope(ASSET_SCOPE,   v)        }
 function readEvents()           { return readScope(HISTORY_SCOPE, []) }
 function writeEvents(v)         { writeScope(HISTORY_SCOPE, v)        }
+
+function syncHistoryScopesToCloud(assets, events) {
+  void localSaveScopeSnapshot(ASSET_SCOPE, assets).catch(() => {})
+  void localSaveScopeSnapshot(HISTORY_SCOPE, events).catch(() => {})
+}
 
 function saveAsset(record) {
   const now  = getNowIso()
@@ -174,10 +180,22 @@ export default function HistoryRegisterPage() {
   useEffect(() => {
     let active = true
     async function bootstrap() {
-      const bundle = await loadReferenceData(profile)
+      const [bundle, cloudAssets, cloudEvents] = await Promise.all([
+        loadReferenceData(profile),
+        localGetScopeSnapshot(ASSET_SCOPE),
+        localGetScopeSnapshot(HISTORY_SCOPE),
+      ])
       if (!active) return
       setReferenceData(bundle)
       setFeeders(listMasterRecords('feeders'))
+      if (Array.isArray(cloudAssets) && cloudAssets.length) {
+        writeAssets(cloudAssets)
+        setAssets(cloudAssets)
+      }
+      if (Array.isArray(cloudEvents) && cloudEvents.length) {
+        writeEvents(cloudEvents)
+        setEvts(cloudEvents)
+      }
       setFilters((c) => ({
         ...c,
         substationId: isMainAdmin
@@ -188,6 +206,34 @@ export default function HistoryRegisterPage() {
     void bootstrap()
     return () => { active = false }
   }, [isMainAdmin, profile, scopedSubstationId])
+
+  useEffect(() => {
+    let active = true
+    async function refreshFromCloud() {
+      const [cloudAssets, cloudEvents] = await Promise.all([
+        localGetScopeSnapshot(ASSET_SCOPE),
+        localGetScopeSnapshot(HISTORY_SCOPE),
+      ])
+      if (!active) {
+        return
+      }
+      if (Array.isArray(cloudAssets) && cloudAssets.length) {
+        setAssets(cloudAssets)
+        writeAssets(cloudAssets)
+      }
+      if (Array.isArray(cloudEvents) && cloudEvents.length) {
+        setEvts(cloudEvents)
+        writeEvents(cloudEvents)
+      }
+    }
+    const timerId = window.setInterval(() => {
+      void refreshFromCloud()
+    }, 60000)
+    return () => {
+      active = false
+      window.clearInterval(timerId)
+    }
+  }, [])
 
   // Derived
   const visibleAssets = assets.filter((asset) =>
@@ -263,6 +309,7 @@ export default function HistoryRegisterPage() {
     }
     setAssets(readAssets())
     setEvts(readEvents())
+    syncHistoryScopesToCloud(readAssets(), readEvents())
     setSelectedId(saved.id)
     setShowAddAsset(false)
     alertDetailSaved()
@@ -279,6 +326,7 @@ export default function HistoryRegisterPage() {
     writeEvents(readEvents().filter((e) => e.assetId !== id))
     setAssets(readAssets())
     setEvts(readEvents())
+    syncHistoryScopesToCloud(readAssets(), readEvents())
     if (selectedId === id) setSelectedId(null)
   }
 
@@ -328,6 +376,7 @@ export default function HistoryRegisterPage() {
         description: `${evForm.description} → replaced by: ${newAsset.name}` })
       setAssets(readAssets())
       setEvts(readEvents())
+      syncHistoryScopesToCloud(readAssets(), readEvents())
       setSelectedId(newAsset.id)
       setShowAddEv(false)
       alertDetailSaved()
@@ -342,6 +391,7 @@ export default function HistoryRegisterPage() {
     saveEvent({ ...evForm, id: undefined })
     setAssets(readAssets())
     setEvts(readEvents())
+    syncHistoryScopesToCloud(readAssets(), readEvents())
     setShowAddEv(false)
     alertDetailSaved()
   }
@@ -355,6 +405,7 @@ export default function HistoryRegisterPage() {
     if (!window.confirm('Delete this history entry?')) return
     deleteEvent(id)
     setEvts(readEvents())
+    syncHistoryScopesToCloud(readAssets(), readEvents())
   }
 
   // ── Stats card data ────────────────────────────────────────────

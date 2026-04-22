@@ -43,6 +43,12 @@ async function prepareNativeShell() {
   }
 
   try {
+    const cleanupKey = 'native-sw-cleanup-complete'
+    const cleanupDone = window.localStorage.getItem(cleanupKey) === '1'
+    if (cleanupDone) {
+      return true
+    }
+
     const registrations = await navigator.serviceWorker.getRegistrations()
     const hadRegistrations = registrations.length > 0
 
@@ -53,10 +59,10 @@ async function prepareNativeShell() {
       await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)))
     }
 
-    if (hadRegistrations && !window.sessionStorage.getItem('native-sw-cleanup-complete')) {
-      window.sessionStorage.setItem('native-sw-cleanup-complete', '1')
-      window.location.reload()
-      return false
+    if (hadRegistrations) {
+      // Mark cleanup done and continue bootstrap without forced reload
+      // so current route continuity is preserved.
+      window.localStorage.setItem(cleanupKey, '1')
     }
   } catch (error) {
     console.warn('Native shell cleanup failed', error)

@@ -1,6 +1,7 @@
 import { Component, useEffect, useState } from 'react'
 
 const CRASH_STORAGE_KEY = 'offline-app-last-crash'
+const CRASH_RELOAD_GUARD_KEY = 'offline-app-crash-reload-guard'
 
 function normalizeCrashMessage(errorLike) {
   if (!errorLike) {
@@ -44,7 +45,7 @@ function persistCrash(payload) {
   }
 }
 
-function CrashScreen({ crash, onReload }) {
+function CrashScreen({ crash, onReload, onContinueWithoutReload }) {
   return (
     <div className="app-crash-screen">
       <div className="loading-card app-crash-card">
@@ -64,6 +65,9 @@ function CrashScreen({ crash, onReload }) {
         <div className="app-crash-actions">
           <button type="button" className="primary-button" onClick={onReload}>
             Reload App
+          </button>
+          <button type="button" className="ghost-light-button" onClick={onContinueWithoutReload}>
+            Continue Without Reload
           </button>
         </div>
       </div>
@@ -91,7 +95,13 @@ class ReactCrashBoundary extends Component {
 
   render() {
     if (this.state.crash) {
-      return <CrashScreen crash={this.state.crash} onReload={this.props.onReload} />
+      return (
+        <CrashScreen
+          crash={this.state.crash}
+          onReload={this.props.onReload}
+          onContinueWithoutReload={this.props.onContinueWithoutReload}
+        />
+      )
     }
 
     return this.props.children
@@ -114,12 +124,25 @@ export default function AppCrashBoundary({ children }) {
       if (message.includes('ResizeObserver loop')) {
         return
       }
+      // Ignore script/resource load noise that does not provide a runtime Error object.
+      if (!event.error && event.filename) {
+        return
+      }
 
       reportCrash(event.error || event.message, 'runtime')
     }
 
     function handleUnhandledRejection(event) {
-      reportCrash(event.reason || 'Unhandled promise rejection', 'promise')
+      const reason = event.reason || 'Unhandled promise rejection'
+      const reasonMessage = normalizeCrashMessage(reason)
+      if (
+        reasonMessage.includes('AbortError') ||
+        reasonMessage.includes('aborted a request') ||
+        reasonMessage.includes('Load failed')
+      ) {
+        return
+      }
+      reportCrash(reason, 'promise')
     }
 
     window.addEventListener('error', handleWindowError)
@@ -132,12 +155,57 @@ export default function AppCrashBoundary({ children }) {
   }, [])
 
   function handleReload() {
+    const now = Date.now()
+    let guardState = { count: 0, startedAt: now }
+    try {
+      guardState = JSON.parse(window.sessionStorage.getItem(CRASH_RELOAD_GUARD_KEY) || '') || guardState
+    } catch {
+      // Keep default guard state.
+    }
+
+    if (now - Number(guardState.startedAt || now) > 30_000) {
+      guardState = { count: 0, startedAt: now }
+    }
+
+    guardState.count += 1
+    window.sessionStorage.setItem(CRASH_RELOAD_GUARD_KEY, JSON.stringify(guardState))
+
+    if (guardState.count > 3) {
+      setRuntimeCrash((current) =>
+        current
+          ? {
+              ...current,
+              message:
+                'Multiple rapid reload attempts detected. Continue without reload and report this crash.',
+            }
+          : current,
+      )
+      return
+    }
+
     window.location.reload()
   }
 
-  if (runtimeCrash) {
-    return <CrashScreen crash={runtimeCrash} onReload={handleReload} />
+  function handleContinueWithoutReload() {
+    setRuntimeCrash(null)
   }
 
-  return <ReactCrashBoundary onReload={handleReload}>{children}</ReactCrashBoundary>
+  if (runtimeCrash) {
+    return (
+      <CrashScreen
+        crash={runtimeCrash}
+        onReload={handleReload}
+        onContinueWithoutReload={handleContinueWithoutReload}
+      />
+    )
+  }
+
+  return (
+    <ReactCrashBoundary
+      onReload={handleReload}
+      onContinueWithoutReload={handleContinueWithoutReload}
+    >
+      {children}
+    </ReactCrashBoundary>
+  )
 }

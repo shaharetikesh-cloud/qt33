@@ -806,6 +806,33 @@ export async function localUpdateFeedbackEntry(feedbackId, data) {
   return localSaveByScope('feedback', { ...data, id: feedbackId })
 }
 
+export async function localGetScopeSnapshot(scope) {
+  const normalizedScope = String(scope || '').trim()
+  if (!normalizedScope) {
+    return []
+  }
+  const rows = await localListByScope(normalizedScope)
+  const snapshotId = `${normalizedScope}-snapshot`
+  const snapshot =
+    rows.find((row) => row.id === snapshotId) ||
+    rows[0]
+  if (!snapshot) {
+    return []
+  }
+  return Array.isArray(snapshot.items) ? snapshot.items : []
+}
+
+export async function localSaveScopeSnapshot(scope, items) {
+  const normalizedScope = String(scope || '').trim()
+  if (!normalizedScope) {
+    throw new Error('Scope is required.')
+  }
+  return localSaveByScope(normalizedScope, {
+    id: `${normalizedScope}-snapshot`,
+    items: Array.isArray(items) ? items : [],
+  })
+}
+
 export async function localExportWorkspaceBackup() {
   const scopes = [
     'attendance-sheets', 'dlr-records', 'feedback', 'notices', 'report-snapshots',
