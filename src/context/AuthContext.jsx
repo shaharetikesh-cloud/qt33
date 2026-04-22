@@ -167,21 +167,24 @@ export function AuthProvider({ children }) {
           setProfileError(error?.message || 'Session validate hou shakla nahi.')
         }
       }
-
-      void runLocalBootstrap().finally(() => {
-        if (alive) {
-          setLoading(false)
-        }
-      })
-
+      let initialAuthResolved = false
       const unsubscribe = firebaseAuth
         ? onAuthStateChanged(firebaseAuth, () => {
             if (!alive) {
               return
             }
-            void runLocalBootstrap()
+            void runLocalBootstrap().finally(() => {
+              if (alive && !initialAuthResolved) {
+                initialAuthResolved = true
+                setLoading(false)
+              }
+            })
           })
         : () => {}
+
+      if (!firebaseAuth) {
+        setLoading(false)
+      }
 
       return () => {
         alive = false

@@ -217,6 +217,40 @@ export default function AppShell() {
     })
   }, [])
 
+  useEffect(() => {
+    let syncDebounceTimer = null
+
+    function scheduleForegroundSync() {
+      if (syncDebounceTimer) {
+        window.clearTimeout(syncDebounceTimer)
+      }
+      syncDebounceTimer = window.setTimeout(() => {
+        void runManualSyncNow().catch(() => {})
+      }, 250)
+    }
+
+    function handleWindowFocus() {
+      scheduleForegroundSync()
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        scheduleForegroundSync()
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (syncDebounceTimer) {
+        window.clearTimeout(syncDebounceTimer)
+      }
+    }
+  }, [])
+
   async function handleManualSync() {
     if (manualSyncBusy) {
       return

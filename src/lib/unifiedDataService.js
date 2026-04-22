@@ -248,16 +248,27 @@ export function isAdminRole(role) {
 
 export function normalizeUserRole(role) {
   const normalized = String(role || '').trim().toLowerCase()
+  const compact = normalized.replace(/\s+/g, '_')
 
-  if (normalized === 'user' || normalized === 'substation_user' || normalized === 'normal_user') {
+  if (normalized === 'user' || compact === 'substation_user' || compact === 'normal_user') {
     return 'substation_user'
   }
 
-  if (normalized === 'owner' || normalized === 'main_admin' || normalized === 'admin') {
+  if (
+    normalized === 'owner' ||
+    compact === 'main_admin' ||
+    normalized === 'admin' ||
+    normalized.includes('super admin') ||
+    compact.includes('super_admin')
+  ) {
     return 'super_admin'
   }
 
-  return normalized || 'substation_user'
+  if (compact === 'substation_admin' || normalized.includes('substation admin')) {
+    return 'substation_admin'
+  }
+
+  return compact || 'substation_user'
 }
 
 export function listMasterRecords(type) {

@@ -875,6 +875,13 @@ async function localSaveByScope(scope, data) {
   await idbPutRecord(scope, record)
   await idbQueueUpsert(scope, record)
   scheduleSync()
+  if (supabase && navigator.onLine) {
+    try {
+      await triggerSync()
+    } catch {
+      // Background retry already scheduled; avoid save-flow crash on transient sync errors.
+    }
+  }
   return { ...record.payload, id: record.id, updatedAt: record.updated_at, updated_at: record.updated_at }
 }
 
@@ -883,6 +890,13 @@ async function localDeleteByScope(scope, id) {
   await idbDeleteRecord(scope, id)
   await idbQueueDelete(scope, id, updatedAt, getDeviceId(), firebaseAuth?.currentUser?.uid || '')
   scheduleSync()
+  if (supabase && navigator.onLine) {
+    try {
+      await triggerSync()
+    } catch {
+      // Background retry already scheduled; avoid delete-flow crash on transient sync errors.
+    }
+  }
 }
 
 async function ensureLegacyRecordCloudMirror(scope, records) {

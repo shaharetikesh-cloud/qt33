@@ -28,6 +28,7 @@ import { backendLabel, isLocalSqlMode } from '../lib/runtimeConfig'
 import { supabase, supabaseConfigError } from '../lib/supabase'
 import { firebaseAuth } from '../lib/firebase'
 import { setSupabaseAccessTokenProvider } from '../lib/supabase'
+import { onAuthStateChanged } from 'firebase/auth'
 
 const AuthContext = createContext(null)
 
@@ -133,14 +134,28 @@ export function AuthProvider({ children }) {
     let alive = true
 
     if (isLocalSqlMode) {
-      void bootstrapLocalSession().finally(() => {
-        if (alive) {
-          setLoading(false)
-        }
-      })
+      let initialAuthResolved = false
+      const unsubscribe = firebaseAuth
+        ? onAuthStateChanged(firebaseAuth, () => {
+            if (!alive) {
+              return
+            }
+            void bootstrapLocalSession().finally(() => {
+              if (alive && !initialAuthResolved) {
+                initialAuthResolved = true
+                setLoading(false)
+              }
+            })
+          })
+        : () => {}
+
+      if (!firebaseAuth) {
+        setLoading(false)
+      }
 
       return () => {
         alive = false
+        unsubscribe()
       }
     }
 

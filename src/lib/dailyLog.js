@@ -1681,9 +1681,36 @@ export function buildDailyLogConfiguration({
 }
 
 export function listDailyLogRecords(records = [], substationId) {
-  return [...records]
-    .filter((record) => record.moduleName === 'daily_log')
-    .filter((record) => !substationId || record.substationId === substationId)
+  const latestByDateKey = new Map()
+
+  for (const record of records || []) {
+    if (record?.moduleName !== 'daily_log') {
+      continue
+    }
+    if (substationId && record?.substationId !== substationId) {
+      continue
+    }
+
+    const dedupeKey = `${record.substationId || ''}::${record.operationalDate || ''}`
+    const existing = latestByDateKey.get(dedupeKey)
+    if (!existing) {
+      latestByDateKey.set(dedupeKey, record)
+      continue
+    }
+
+    const existingTime = new Date(
+      existing.updatedAt || existing.updated_at || existing.client_updated_at || existing.createdAt || 0,
+    ).getTime()
+    const candidateTime = new Date(
+      record.updatedAt || record.updated_at || record.client_updated_at || record.createdAt || 0,
+    ).getTime()
+
+    if (candidateTime >= existingTime) {
+      latestByDateKey.set(dedupeKey, record)
+    }
+  }
+
+  return Array.from(latestByDateKey.values())
     .sort((left, right) => compareByDate(right.operationalDate, left.operationalDate))
 }
 
