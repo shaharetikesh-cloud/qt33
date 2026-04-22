@@ -242,14 +242,22 @@ function mergeCollectionRecords(collection = [], incomingCollection = []) {
 }
 
 export function isAdminRole(role) {
-  return role === 'admin' || role === 'super_admin' || role === 'substation_admin'
+  const normalizedRole = normalizeUserRole(role)
+  return normalizedRole === 'super_admin' || normalizedRole === 'substation_admin'
 }
 
 export function normalizeUserRole(role) {
-  if (role === 'user') {
+  const normalized = String(role || '').trim().toLowerCase()
+
+  if (normalized === 'user' || normalized === 'substation_user' || normalized === 'normal_user') {
     return 'substation_user'
   }
-  return role || 'substation_user'
+
+  if (normalized === 'owner' || normalized === 'main_admin' || normalized === 'admin') {
+    return 'super_admin'
+  }
+
+  return normalized || 'substation_user'
 }
 
 export function listMasterRecords(type) {
@@ -455,7 +463,7 @@ export function getAllowedSubstationIds(profile) {
     return null
   }
 
-  if (role === 'super_admin' || role === 'admin') {
+  if (role === 'super_admin') {
     return null
   }
 
@@ -476,7 +484,7 @@ export function getAllowedSubstationIds(profile) {
 export function assertSubstationAccess(profile, substationId) {
   const role = normalizeUserRole(profile?.role)
 
-  if (!substationId || !profile || role === 'super_admin' || role === 'admin') {
+  if (!substationId || !profile || role === 'super_admin') {
     return
   }
 

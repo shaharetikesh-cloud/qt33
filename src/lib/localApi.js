@@ -940,6 +940,20 @@ async function localListByScope(scope) {
 
 function filterByObject(collection, filters) {
   return collection.filter((item) =>
-    Object.entries(filters || {}).every(([key, value]) => !value || item[key] === value || String(item[key] || '').startsWith(String(value))),
+    Object.entries(filters || {}).every(([key, value]) => {
+      if (
+        value === null ||
+        value === undefined ||
+        value === '' ||
+        key === 'profile' ||
+        typeof value === 'object'
+      ) {
+        return true
+      }
+      return (
+        item[key] === value ||
+        String(item[key] || '').startsWith(String(value))
+      )
+    }),
   )
 }

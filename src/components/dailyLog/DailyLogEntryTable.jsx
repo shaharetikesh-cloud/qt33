@@ -279,6 +279,8 @@ export default function DailyLogEntryTable({
                         <div className="daily-log-cell-wrap">
                           <input
                             type="text"
+                            id={`daily-log-feeder-${rowIndex}-${column.key}`}
+                            name={`dailyLogFeeder-${row.hour}-${column.id}-${column.metric}`}
                             inputMode="decimal"
                             className={[
                               inputClassName,
@@ -325,6 +327,8 @@ export default function DailyLogEntryTable({
                       <td key={column.key} data-metric={column.metric}>
                         <input
                           type="text"
+                          id={`daily-log-battery-${rowIndex}-${column.key}`}
+                          name={`dailyLogBattery-${row.hour}-${column.id}`}
                           inputMode="decimal"
                           className="daily-log-cell-input"
                           value={row.batteryVoltages?.[column.id] ?? ''}
@@ -348,6 +352,8 @@ export default function DailyLogEntryTable({
                     <td key={column.key} data-metric={column.metric}>
                       <input
                         type="text"
+                        id={`daily-log-transformer-${rowIndex}-${column.key}`}
+                        name={`dailyLogTransformer-${row.hour}-${column.id}-${column.metric}`}
                         inputMode="decimal"
                         className="daily-log-cell-input"
                         value={
@@ -377,6 +383,8 @@ export default function DailyLogEntryTable({
                 })}
                 <td className="daily-log-remark-cell">
                   <input
+                    id={`daily-log-remark-${rowIndex}`}
+                    name={`dailyLogRemark-${row.hour}`}
                     value={row.remark || ''}
                     className="daily-log-cell-input"
                     readOnly={!editable}

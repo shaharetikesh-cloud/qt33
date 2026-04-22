@@ -242,11 +242,22 @@ function mergeCollectionRecords(collection = [], incomingCollection = []) {
 }
 
 export function isAdminRole(role) {
-  return role === 'admin' || role === 'super_admin'
+  const normalizedRole = normalizeUserRole(role)
+  return normalizedRole === 'super_admin' || normalizedRole === 'substation_admin'
 }
 
 export function normalizeUserRole(role) {
-  return role === 'user' ? 'substation_user' : role || 'substation_user'
+  const normalized = String(role || '').trim().toLowerCase()
+
+  if (normalized === 'user' || normalized === 'substation_user' || normalized === 'normal_user') {
+    return 'substation_user'
+  }
+
+  if (normalized === 'owner' || normalized === 'main_admin' || normalized === 'admin') {
+    return 'super_admin'
+  }
+
+  return normalized || 'substation_user'
 }
 
 export function listMasterRecords(type) {
