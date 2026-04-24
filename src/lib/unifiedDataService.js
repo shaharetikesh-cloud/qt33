@@ -524,7 +524,11 @@ function isNoticeVisibleForProfile(notice, profile) {
   }
 
   const allowedSubstationIds = getAllowedSubstationIds(profile)
-  return !allowedSubstationIds || !notice.substationId || allowedSubstationIds.includes(notice.substationId)
+  if (!allowedSubstationIds) {
+    return true
+  }
+  const noticeSubstationId = String(notice.substationId || '').trim()
+  return noticeSubstationId ? allowedSubstationIds.includes(noticeSubstationId) : false
 }
 
 export async function loadReferenceData(profile) {
@@ -599,12 +603,11 @@ export function listAttendanceDocuments(filters = {}) {
     .filter((item) => !filters.monthKey || item.monthKey === filters.monthKey)
     .filter((item) => !filters.substationId || item.substationId === filters.substationId)
     .filter((item) => !filters.ownerUserId || item.ownerUserId === filters.ownerUserId)
-    .filter(
-      (item) =>
-        !allowedSubstationIds ||
-        !item.substationId ||
-        allowedSubstationIds.includes(item.substationId),
-    )
+    .filter((item) => {
+      if (!allowedSubstationIds) return true
+      const substationId = String(item.substationId || '').trim()
+      return substationId ? allowedSubstationIds.includes(substationId) : false
+    })
 }
 
 export async function loadAttendanceDocuments(filters = {}) {
@@ -709,12 +712,20 @@ export function listDlrRecords(filters = {}) {
     .filter((item) => !filters.ownerUserId || item.ownerUserId === filters.ownerUserId)
     .filter((item) => !filters.operationalDate || item.operationalDate === filters.operationalDate)
     .filter((item) => !filters.monthKey || String(item.operationalDate || '').startsWith(filters.monthKey))
-    .filter(
-      (item) =>
-        !allowedSubstationIds ||
-        !item.substationId ||
-        allowedSubstationIds.includes(item.substationId),
-    )
+    .filter((item) => {
+      if (!allowedSubstationIds) return true
+      const substationId = String(item.substationId || '').trim()
+      if (!substationId) {
+        console.warn('[access:block:listDlrRecords:missing-substationId]', {
+          role: normalizeUserRole(filters.profile?.role),
+          profileId: filters.profile?.id || filters.profile?.auth_user_id,
+          recordId: item.id,
+          moduleName: item.moduleName,
+        })
+        return false
+      }
+      return allowedSubstationIds.includes(substationId)
+    })
 }
 
 export async function loadDlrRecords(filters = {}) {
@@ -873,12 +884,11 @@ export function listReportSnapshots(filters = {}) {
     .filter((item) => !filters.reportType || item.reportType === filters.reportType)
     .filter((item) => !filters.filenameBase || item.filenameBase === filters.filenameBase)
     .filter((item) => adminUser || !visibleOwnerId || item.ownerUserId === visibleOwnerId)
-    .filter(
-      (item) =>
-        !allowedSubstationIds ||
-        !item.substationId ||
-        allowedSubstationIds.includes(item.substationId),
-    )
+    .filter((item) => {
+      if (!allowedSubstationIds) return true
+      const substationId = String(item.substationId || '').trim()
+      return substationId ? allowedSubstationIds.includes(substationId) : false
+    })
 }
 
 export async function loadReportSnapshots(filters = {}) {

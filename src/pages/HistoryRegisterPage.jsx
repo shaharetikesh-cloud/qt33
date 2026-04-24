@@ -236,9 +236,11 @@ export default function HistoryRegisterPage() {
   }, [])
 
   // Derived
-  const visibleAssets = assets.filter((asset) =>
-    isMainAdmin || !scopedSubstationId || asset.substationId === scopedSubstationId,
-  )
+  const visibleAssets = assets.filter((asset) => {
+    if (isMainAdmin) return true
+    if (!scopedSubstationId) return false
+    return asset.substationId === scopedSubstationId
+  })
   const selectedAsset =
     visibleAssets.find((asset) => asset.id === selectedId) || null
   const assetEvents   = events

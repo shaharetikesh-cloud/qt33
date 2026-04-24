@@ -12,6 +12,8 @@
 
 create extension if not exists pgcrypto;
 
+drop function if exists public.current_actor_profile_id();
+
 -- -------------------------------------------------------------------
 -- 0) Compatibility columns (if missing)
 -- -------------------------------------------------------------------
@@ -39,6 +41,8 @@ create or replace function public.current_actor_uid_text()
 returns text
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select coalesce(auth.jwt()->>'sub', auth.uid()::text, '');
 $$;
@@ -47,6 +51,8 @@ create or replace function public.current_actor_profile_id_text()
 returns text
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select p.id::text
   from public.profiles p
@@ -59,6 +65,8 @@ create or replace function public.current_actor_role()
 returns text
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select coalesce(
     (
@@ -81,6 +89,8 @@ create or replace function public.is_super_admin_actor()
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select public.current_actor_role() = 'super_admin';
 $$;
@@ -89,6 +99,8 @@ create or replace function public.is_substation_admin_actor()
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select public.current_actor_role() = 'substation_admin';
 $$;
@@ -100,6 +112,8 @@ create or replace function public.actor_profile_substation_text()
 returns text
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select coalesce(
     (
@@ -117,6 +131,8 @@ create or replace function public.is_substation_owned_by_actor(target_substation
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -135,6 +151,8 @@ create or replace function public.can_access_substation_text(target_substation_i
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select case
     when target_substation_id is null or trim(target_substation_id) = '' then false
@@ -148,6 +166,16 @@ as $$
   end;
 $$;
 
+create or replace function public.can_access_substation_text(target_substation_id bigint)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.can_access_substation_text(target_substation_id::text);
+$$;
+
 create or replace function public.resolve_record_substation_text(
   direct_substation text,
   payload jsonb default '{}'::jsonb
@@ -155,6 +183,8 @@ create or replace function public.resolve_record_substation_text(
 returns text
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select coalesce(
     nullif(trim(coalesce(direct_substation, '')), ''),
