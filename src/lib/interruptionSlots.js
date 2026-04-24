@@ -40,7 +40,6 @@ export function getInterruptionOverlayHourIndexes({
   fromTime,
   toTime,
   excludeStartHourSlot = false,
-  preserveDurationWhenShifted = false,
 }) {
   const fromMinutes = parseTimeToMinutes(fromTime)
   const toMinutes = parseTimeToMinutes(toTime)
@@ -50,28 +49,16 @@ export function getInterruptionOverlayHourIndexes({
   }
 
   const startHourIndex = Math.floor(fromMinutes / 60)
-  const durationMinutes = toMinutes - fromMinutes
-  const baseSlotCount = Math.ceil(durationMinutes / 60)
-  const shiftedStartHourIndex = excludeStartHourSlot ? startHourIndex + 1 : startHourIndex
-  const clampedStart = Math.max(0, Math.min(24, shiftedStartHourIndex))
+  const endHourIndex = Math.floor(toMinutes / 60)
+  const clampedStart = Math.max(0, Math.min(24, excludeStartHourSlot ? startHourIndex + 1 : startHourIndex))
+  const clampedEnd = Math.max(0, Math.min(24, endHourIndex))
 
-  // Shifted-start rule:
-  // If start-hour already has KWH reading, we skip LS on that hour.
-  // Duration-preservation rule:
-  // Keep LS slot count equal to interruption duration even after shifting.
-  // Example: 22:00 -> 24:00 (2 hours), shifted start => 23:00 and 24:00.
-  const shiftedCount = excludeStartHourSlot && preserveDurationWhenShifted
-    ? baseSlotCount
-    : Math.max(0, baseSlotCount - (excludeStartHourSlot ? 1 : 0))
-
-  if (shiftedCount <= 0) {
+  if (clampedEnd < clampedStart) {
     return []
   }
 
   const slots = []
-  for (let offset = 0; offset < shiftedCount; offset += 1) {
-    const hourIndex = clampedStart + offset
-    if (hourIndex > 24) break
+  for (let hourIndex = clampedStart; hourIndex <= clampedEnd; hourIndex += 1) {
     slots.push(hourIndex)
   }
   return slots

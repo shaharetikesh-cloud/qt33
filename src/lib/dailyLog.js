@@ -567,26 +567,17 @@ function isActualAnchor(reading) {
   return entryMode !== 'estimated'
 }
 
-function hasStartHourReading(rows = [], feederId, startHourIndex) {
-  const reading = rows[startHourIndex]?.feederReadings?.[feederId]
-  return numericOrNull(reading?.kwh) !== null
-}
-
-function buildExplicitOverlayMap(interruptions, rows = []) {
+function buildExplicitOverlayMap(interruptions) {
   const overlayMap = new Map()
 
   interruptions.forEach((interruption) => {
     ;(interruption.affectedFeederIds || [interruption.feeder_id]).forEach((feederId) => {
-      const startHourIndex = timeToHourIndex(interruption.from_time)
-      const startHourHasReading = hasStartHourReading(rows, feederId, startHourIndex)
-      // If start-hour has an actual reading, LS starts from next hour.
-      // We still preserve interruption duration count after this shift.
-      // Example: 22:00->24:00 with 22:00 reading => LS overlays 23:00 and 24:00.
+      // Final business rule:
+      // Always exclude start-hour slot and include end-hour slot for LS overlay.
       const overlayHours = getInterruptionOverlayHourIndexes({
         fromTime: interruption.from_time,
         toTime: interruption.to_time,
-        excludeStartHourSlot: startHourHasReading,
-        preserveDurationWhenShifted: true,
+        excludeStartHourSlot: true,
       })
       if (!overlayHours.length) return
 
@@ -997,7 +988,7 @@ export function applyAutomaticKwhGapFill(rows, feederId, currentRowIndex, interr
     }
   }
 
-  const explicitOverlayMap = buildExplicitOverlayMap(interruptions, rows)
+  const explicitOverlayMap = buildExplicitOverlayMap(interruptions)
   const gapIndexes = getEstimatableGapIndexes(
     rows,
     feederId,
@@ -2003,7 +1994,7 @@ export function deriveDailyLogState(form, config) {
       }
     })
 
-  const explicitOverlayMap = buildExplicitOverlayMap(normalizedInterruptions, validatedBaseRows)
+  const explicitOverlayMap = buildExplicitOverlayMap(normalizedInterruptions)
   const autoLsState = buildAutoLsState(validatedBaseRows, config, explicitOverlayMap, dayStatus)
   const overlayMap = new Map([
     ...autoLsState.autoOverlayMap.entries(),
