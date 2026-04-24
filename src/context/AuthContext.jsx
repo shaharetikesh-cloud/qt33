@@ -450,27 +450,30 @@ export function AuthProvider({ children }) {
 
   const listUsers = useCallback(async (filters = {}) => {
     if (isLocalSqlMode) {
-      return localListUsers(filters)
+      return localListUsers({
+        ...filters,
+        actor: profile,
+      })
     }
 
     throw new Error('Supabase mode users UI ajun implement kelela nahi.')
-  }, [])
+  }, [profile])
 
   const createUserByAdmin = useCallback(async (data) => {
     if (isLocalSqlMode) {
-      return localCreateUser(data)
+      return localCreateUser(data, profile)
     }
 
     throw new Error('Supabase mode admin user create UI ajun implement kelela nahi.')
-  }, [])
+  }, [profile])
 
   const updateUserByAdmin = useCallback(async (userId, data) => {
     if (isLocalSqlMode) {
-      return localUpdateUser(userId, data)
+      return localUpdateUser(userId, data, profile)
     }
 
     throw new Error('Supabase mode admin user update UI ajun implement kelela nahi.')
-  }, [])
+  }, [profile])
 
   const resetUserPasswordByAdmin = useCallback(async (userId, temporaryPassword) => {
     if (isLocalSqlMode) {
@@ -482,11 +485,11 @@ export function AuthProvider({ children }) {
 
   const deleteUserByAdmin = useCallback(async (userId) => {
     if (isLocalSqlMode) {
-      return localDeleteUser(userId)
+      return localDeleteUser(userId, profile)
     }
 
     throw new Error('Supabase mode admin user delete UI ajun implement kelela nahi.')
-  }, [])
+  }, [profile])
 
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     if (isLocalSqlMode) {

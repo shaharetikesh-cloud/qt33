@@ -28,6 +28,12 @@ import { getDeviceId } from './clientIdentity'
 import { supabase, supabaseConfigError } from './supabase'
 import { scheduleSync, syncScope, triggerSync } from './syncEngine'
 import { firebaseConfigError } from './firebase'
+import {
+  canAccessSubstationForUser,
+  getAllowedSubstationIdsForUser,
+  getAllowedSubstationsForUser,
+  normalizeAccessRole,
+} from './substationAccess'
 
 const MASTER_COLLECTION_KEYS = ['divisions', 'feeders', 'batterySets', 'transformers']
 
@@ -396,6 +402,16 @@ export async function localUpdatePassword(newPassword) {
 
 export async function localListUsers(filters = {}) {
   if (!supabase) throw new Error('Supabase not configured.')
+  const actor = filters.actor || null
+  const role = normalizeAccessRole(actor?.role)
+  const substationsForAccess = await localListSubstations({ actor: null })
+  const mappingsForAccess = await localListUserSubstationMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({
+    profile: actor,
+    substations: substationsForAccess,
+    mappings: mappingsForAccess,
+  })
+
   let query = supabase.from('profiles').select('*', { count: 'exact' }).order('updated_at', { ascending: false })
   if (filters.role) query = query.eq('role', filters.role)
   if (filters.status) query = query.eq('is_active', filters.status === 'active')
@@ -406,14 +422,36 @@ export async function localListUsers(filters = {}) {
   query = query.range((page - 1) * pageSize, page * pageSize - 1)
   const { data, count, error } = await query
   if (error) throw error
-  const users = await applyMonthlyAutoDisable(data ?? [])
+  let users = await applyMonthlyAutoDisable(data ?? [])
+
+  if (actor && role !== 'super_admin') {
+    users = users.filter((user) => {
+      const substationId = String(user?.substation_id || '').trim()
+      if (!substationId) {
+        return role === 'substation_admin' ? normalizeAccessRole(user?.role) !== 'super_admin' : true
+      }
+      return Array.isArray(allowedSubstationIds) ? allowedSubstationIds.includes(substationId) : false
+    })
+  }
+
+  console.info('[access:listUsers]', {
+    role,
+    profileId: actor?.id || actor?.auth_user_id || '',
+    allowedSubstationIds,
+    queryFilters: {
+      role: filters.role || '',
+      status: filters.status || '',
+      substationId: filters.substationId || '',
+      search: filters.search ? '[set]' : '',
+    },
+  })
   return {
     users,
     pagination: { page, pageSize, total: count || 0, totalPages: Math.ceil((count || 0) / pageSize) || 1 },
   }
 }
 
-export async function localCreateUser(data) {
+export async function localCreateUser(data, actor = null) {
   if (isAdminFunctionsEnabled()) {
     const payload = await invokeAdminFunction('admin-create-user', data)
     return payload.user || payload
@@ -429,6 +467,28 @@ export async function localCreateUser(data) {
   const email = String(data.email || '').trim().toLowerCase() || buildPlaceholderEmail(username)
   const role = normalizeRole(data.role)
   const isActive = Boolean(data.isActive)
+  const substationsForAccess = await localListSubstations({ actor: null })
+  const mappingsForAccess = await localListUserSubstationMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({
+    profile: actor,
+    substations: substationsForAccess,
+    mappings: mappingsForAccess,
+  })
+  const targetSubstationId = String(data.substationId || '').trim()
+  if (
+    actor &&
+    normalizeAccessRole(actor?.role) !== 'super_admin' &&
+    targetSubstationId &&
+    (!Array.isArray(allowedSubstationIds) || !allowedSubstationIds.includes(targetSubstationId))
+  ) {
+    console.warn('[access:block:createUser]', {
+      role: normalizeAccessRole(actor?.role),
+      profileId: actor?.id || actor?.auth_user_id,
+      allowedSubstationIds,
+      selectedSubstationId: targetSubstationId,
+    })
+    throw new Error('Selected substation access denied.')
+  }
 
   if (!username || !fullName || !password) {
     throw new Error('Username, full name, ani password required aahe.')
@@ -460,7 +520,9 @@ export async function localCreateUser(data) {
     full_name: fullName,
     role,
     is_active: isActive,
-    substation_id: data.substationId || null,
+    substation_id: targetSubstationId || null,
+    created_by_profile_id: actor?.id || null,
+    parent_admin_id: normalizeAccessRole(actor?.role) === 'substation_admin' ? actor?.id || null : null,
   }
   const { data: saved, error } = await supabase.from('profiles').insert(profileRow).select('*').single()
   if (error) throw error
@@ -470,7 +532,42 @@ export async function localCreateUser(data) {
   }
 }
 
-export async function localUpdateUser(userId, data) {
+export async function localUpdateUser(userId, data, actor = null) {
+  const { data: existing, error: existingError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+  if (existingError) throw existingError
+
+  const substationsForAccess = await localListSubstations({ actor: null })
+  const mappingsForAccess = await localListUserSubstationMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({
+    profile: actor,
+    substations: substationsForAccess,
+    mappings: mappingsForAccess,
+  })
+  const role = normalizeAccessRole(actor?.role)
+  const currentTargetSubstationId = String(existing?.substation_id || '').trim()
+  const nextTargetSubstationId = String(data.substationId || '').trim()
+  const blockedCurrent =
+    role !== 'super_admin' &&
+    currentTargetSubstationId &&
+    (!Array.isArray(allowedSubstationIds) || !allowedSubstationIds.includes(currentTargetSubstationId))
+  const blockedNext =
+    role !== 'super_admin' &&
+    nextTargetSubstationId &&
+    (!Array.isArray(allowedSubstationIds) || !allowedSubstationIds.includes(nextTargetSubstationId))
+  if (blockedCurrent || blockedNext) {
+    console.warn('[access:block:updateUser]', {
+      role,
+      profileId: actor?.id || actor?.auth_user_id,
+      allowedSubstationIds,
+      selectedSubstationId: nextTargetSubstationId || currentTargetSubstationId,
+    })
+    throw new Error('User update access denied for selected substation.')
+  }
+
   const patch = {
     username: data.username,
     full_name: data.fullName,
@@ -485,7 +582,37 @@ export async function localUpdateUser(userId, data) {
   return saved
 }
 
-export async function localDeleteUser(userId) {
+export async function localDeleteUser(userId, actor = null) {
+  const { data: existing, error: existingError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+  if (existingError) throw existingError
+  const substationsForAccess = await localListSubstations({ actor: null })
+  const mappingsForAccess = await localListUserSubstationMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({
+    profile: actor,
+    substations: substationsForAccess,
+    mappings: mappingsForAccess,
+  })
+  const role = normalizeAccessRole(actor?.role)
+  const targetSubstationId = String(existing?.substation_id || '').trim()
+  if (
+    actor &&
+    role !== 'super_admin' &&
+    targetSubstationId &&
+    (!Array.isArray(allowedSubstationIds) || !allowedSubstationIds.includes(targetSubstationId))
+  ) {
+    console.warn('[access:block:deleteUser]', {
+      role,
+      profileId: actor?.id || actor?.auth_user_id,
+      allowedSubstationIds,
+      selectedSubstationId: targetSubstationId,
+    })
+    throw new Error('User delete access denied for selected substation.')
+  }
+
   if (isAdminFunctionsEnabled()) {
     return invokeAdminFunction('admin-disable-user', { userId })
   }
@@ -520,10 +647,10 @@ export async function localCreateAppAuditEvent(data) {
   return localSaveByScope('audit-events', data)
 }
 
-export async function localGetDashboardSummary() {
+export async function localGetDashboardSummary(actor = null) {
   const [substations, employees, notices, feedback] = await Promise.all([
-    localListSubstations(),
-    localListEmployees(),
+    localListSubstations({ actor }),
+    localListEmployees({ actor }),
     localListNotices({ status: 'active' }),
     localListFeedbackEntries({ status: 'open' }),
   ])
@@ -617,11 +744,31 @@ export async function localDeleteUserSubstationMapping(mappingId) {
   await localDeleteByScope('user-substation-mappings', mappingId)
 }
 
-export async function localListSubstations() {
+export async function localListSubstations({ actor = null } = {}) {
   const scopedRows = await localListByScope('substations')
-  return [...scopedRows].sort((left, right) =>
+  const mappings = actor ? await localListUserSubstationMappings() : []
+  const visibleRows = actor
+    ? getAllowedSubstationsForUser({
+        profile: actor,
+        substations: scopedRows,
+        mappings,
+      })
+    : scopedRows
+  const sortedRows = [...visibleRows].sort((left, right) =>
     String(left?.name || '').localeCompare(String(right?.name || '')),
   )
+  if (actor) {
+    console.info('[access:listSubstations]', {
+      role: normalizeAccessRole(actor?.role),
+      profileId: actor?.id || actor?.auth_user_id,
+      allowedSubstationIds: getAllowedSubstationIdsForUser({
+        profile: actor,
+        substations: scopedRows,
+        mappings,
+      }),
+    })
+  }
+  return sortedRows
 }
 
 export async function localGetWorkspaceConfig() {
@@ -695,7 +842,13 @@ export async function localSaveSettingsBundle(data) {
 }
 
 export async function localCreateSubstation(data, actor = null) {
-  const savedRow = await localSaveByScope('substations', data)
+  const payload = {
+    ...data,
+    created_by_profile_id: actor?.id || null,
+    created_by_auth_user_id: actor?.auth_user_id || actor?.id || '',
+    parent_admin_id: normalizeAccessRole(actor?.role) === 'substation_admin' ? actor?.id || null : null,
+  }
+  const savedRow = await localSaveByScope('substations', payload)
   const row = null
 
   const actorRole = String(actor?.role || '').trim().toLowerCase()
@@ -732,6 +885,27 @@ export async function localCreateSubstation(data, actor = null) {
 
 export async function localListEmployees(filters = {}) {
   let rows = await localListByScope('employees')
+  if (filters.actor) {
+    const substations = await localListSubstations({ actor: null })
+    const mappings = await localListUserSubstationMappings()
+    const allowedSubstationIds = getAllowedSubstationIdsForUser({
+      profile: filters.actor,
+      substations,
+      mappings,
+    })
+    if (Array.isArray(allowedSubstationIds)) {
+      rows = rows.filter((item) => allowedSubstationIds.includes(String(item.substation_id || '').trim()))
+    }
+    console.info('[access:listEmployees]', {
+      role: normalizeAccessRole(filters.actor?.role),
+      profileId: filters.actor?.id || filters.actor?.auth_user_id || '',
+      allowedSubstationIds,
+      queryFilters: {
+        substationId: filters.substationId || '',
+        employeeType: filters.employeeType || '',
+      },
+    })
+  }
   if (filters.substationId) rows = rows.filter((item) => item.substation_id === filters.substationId)
   if (filters.employeeType) rows = rows.filter((item) => item.employee_type === filters.employeeType)
   if (filters.search) rows = rows.filter((item) => JSON.stringify(item).toLowerCase().includes(String(filters.search).toLowerCase()))

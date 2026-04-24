@@ -46,7 +46,7 @@ export const MODULE_PERMISSION_KEYS = [
 ]
 
 const LEGACY_ROLE_ALIASES = {
-  admin: ROLE_KEYS.SUPER_ADMIN,
+  admin: ROLE_KEYS.SUBSTATION_ADMIN,
   user: ROLE_KEYS.NORMAL_USER,
   substation_user: ROLE_KEYS.NORMAL_USER,
 }

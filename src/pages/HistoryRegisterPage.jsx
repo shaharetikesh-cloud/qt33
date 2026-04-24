@@ -483,7 +483,7 @@ export default function HistoryRegisterPage() {
             <select id="hr-substation" value={filters.substationId}
               disabled={!isMainAdmin}
               onChange={(e) => setFilters((c) => ({ ...c, substationId: e.target.value, feederId: '' }))}>
-              <option value="">All</option>
+              {isMainAdmin ? <option value="">All</option> : null}
               {referenceData.substations.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}

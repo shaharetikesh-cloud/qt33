@@ -538,7 +538,7 @@ export default function AppShell() {
                   setPreferredSubstationId(nextValue)
                 }}
               >
-                <option value="">All</option>
+                {isMainAdmin ? <option value="">All</option> : null}
                 {substations.map((substation) => (
                   <option key={substation.id} value={substation.id}>
                     {substation.name}

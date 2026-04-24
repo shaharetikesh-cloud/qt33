@@ -88,6 +88,7 @@ function mapEditForm(employee) {
 export default function EmployeesPage() {
   const {
     isAdmin,
+    isMainAdmin,
     profile,
     backendLabel,
     canCreateModule,
@@ -124,8 +125,8 @@ export default function EmployeesPage() {
 
       try {
         const [substationData, employeeData] = await Promise.all([
-          localListSubstations(),
-          localListEmployees(),
+          localListSubstations({ actor: profile }),
+          localListEmployees({ actor: profile }),
         ])
 
         if (!active) {
@@ -159,10 +160,11 @@ export default function EmployeesPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [profile])
 
   async function refreshEmployees(nextFilters = {}) {
     const result = await localListEmployees({
+      actor: profile,
       substationId: nextFilters.substationId ?? substationFilter,
       employeeType: nextFilters.employeeType ?? typeFilter,
       search: nextFilters.search ?? search,
@@ -183,6 +185,7 @@ export default function EmployeesPage() {
     async function loadFilteredEmployees() {
       try {
         const result = await localListEmployees({
+          actor: profile,
           substationId: substationFilter,
           employeeType: typeFilter,
           search,
@@ -207,7 +210,7 @@ export default function EmployeesPage() {
     return () => {
       active = false
     }
-  }, [search, substationFilter, typeFilter])
+  }, [profile, search, substationFilter, typeFilter])
 
   async function handleAdd(event) {
     event.preventDefault()
@@ -348,7 +351,7 @@ export default function EmployeesPage() {
               value={substationFilter}
               onChange={(event) => setSubstationFilter(event.target.value)}
             >
-              <option value="">All</option>
+              {isMainAdmin ? <option value="">All</option> : null}
               {substations.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}

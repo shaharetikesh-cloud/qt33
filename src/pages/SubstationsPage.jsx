@@ -44,20 +44,14 @@ export default function SubstationsPage() {
       setError('')
 
       try {
-        const data = await localListSubstations()
+        const data = await localListSubstations({ actor: profile })
 
         if (!active) {
           return
         }
 
-        const scopedSubstationId = String(profile?.substation_id || profile?.substationId || '').trim()
-        const visibleRows =
-          isSubstationAdmin && scopedSubstationId
-            ? data.filter((item) => item.id === scopedSubstationId)
-            : data
-
         startTransition(() => {
-          setSubstations(visibleRows)
+          setSubstations(data)
         })
       } catch (loadError) {
         if (active) {
@@ -75,7 +69,7 @@ export default function SubstationsPage() {
     return () => {
       active = false
     }
-  }, [isSubstationAdmin, profile?.substation_id, profile?.substationId])
+  }, [isSubstationAdmin, profile])
 
   async function handleSubmit(event) {
     event.preventDefault()

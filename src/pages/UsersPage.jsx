@@ -72,9 +72,13 @@ export default function UsersPage() {
   useEffect(() => {
     setForm((current) => ({
       ...current,
-      substationId: isMainAdmin ? current.substationId : actorSubstationId,
+      substationId:
+        current.substationId ||
+        actorSubstationId ||
+        substations[0]?.id ||
+        '',
     }))
-  }, [actorSubstationId, isMainAdmin])
+  }, [actorSubstationId, isMainAdmin, substations])
 
   useEffect(() => {
     if (!canManageUsers) {
@@ -92,9 +96,9 @@ export default function UsersPage() {
         const [userPayload, substationRows] = await Promise.all([
           listUsers({
             ...filters,
-            substationId: isMainAdmin ? filters.substationId : actorSubstationId,
+            substationId: isMainAdmin ? filters.substationId : filters.substationId,
           }),
-          localListSubstations(),
+          localListSubstations({ actor: profile }),
         ])
 
         if (!active) {
@@ -163,7 +167,7 @@ export default function UsersPage() {
           username: form.username,
           role: form.role,
           isActive: form.isActive,
-          substationId: isMainAdmin ? form.substationId : actorSubstationId,
+          substationId: isMainAdmin ? form.substationId : form.substationId,
           allowDelete: form.allowDelete,
         })
 
@@ -182,7 +186,7 @@ export default function UsersPage() {
           password: form.password,
           role: form.role,
           isActive: form.isActive,
-          substationId: isMainAdmin ? form.substationId : actorSubstationId,
+          substationId: isMainAdmin ? form.substationId : form.substationId,
           allowDelete: form.allowDelete,
           mustChangePassword: true,
         })
@@ -456,14 +460,14 @@ export default function UsersPage() {
               <label htmlFor="user-substation">Assigned Substation</label>
               <select
                 id="user-substation"
-                value={isMainAdmin ? form.substationId : actorSubstationId}
+                value={form.substationId}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
                     substationId: event.target.value,
                   }))
                 }
-                disabled={!isMainAdmin}
+                disabled={!isMainAdmin && !substations.length}
                 required={form.role !== ROLE_KEYS.SUPER_ADMIN}
               >
                 <option value="">Select substation</option>
@@ -578,7 +582,7 @@ export default function UsersPage() {
             <label htmlFor="filter-substation">Substation</label>
             <select
               id="filter-substation"
-              value={isMainAdmin ? filters.substationId : actorSubstationId}
+              value={filters.substationId}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
@@ -588,7 +592,7 @@ export default function UsersPage() {
               }
               disabled={!isMainAdmin}
             >
-              <option value="">All visible substations</option>
+              {isMainAdmin ? <option value="">All visible substations</option> : null}
               {substations.map((substation) => (
                 <option key={substation.id} value={substation.id}>
                   {substation.name}

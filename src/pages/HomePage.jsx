@@ -147,7 +147,7 @@ export default function HomePage() {
       }
 
       try {
-        const data = await localGetDashboardSummary()
+        const data = await localGetDashboardSummary(profile)
 
         if (active) {
           setSummary((current) => ({

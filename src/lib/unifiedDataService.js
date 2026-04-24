@@ -30,6 +30,12 @@ import {
 } from './localApi'
 import { isLocalSqlMode } from './runtimeConfig'
 import {
+  canAccessSubstationForUser,
+  getAllowedSubstationIdsForUser,
+  getAllowedSubstationsForUser as getAllowedSubstationsForUserFromScope,
+  normalizeAccessRole,
+} from './substationAccess'
+import {
   createLocalId,
   getNowIso,
   readScope,
@@ -247,28 +253,7 @@ export function isAdminRole(role) {
 }
 
 export function normalizeUserRole(role) {
-  const normalized = String(role || '').trim().toLowerCase()
-  const compact = normalized.replace(/\s+/g, '_')
-
-  if (normalized === 'user' || compact === 'substation_user' || compact === 'normal_user') {
-    return 'substation_user'
-  }
-
-  if (
-    normalized === 'owner' ||
-    compact === 'main_admin' ||
-    normalized === 'admin' ||
-    normalized.includes('super admin') ||
-    compact.includes('super_admin')
-  ) {
-    return 'super_admin'
-  }
-
-  if (compact === 'substation_admin' || normalized.includes('substation admin')) {
-    return 'substation_admin'
-  }
-
-  return compact || 'substation_user'
+  return normalizeAccessRole(role)
 }
 
 export function listMasterRecords(type) {
@@ -467,43 +452,50 @@ export async function deleteUserSubstationMapping(mappingId, actor) {
   })
 }
 
-export function getAllowedSubstationIds(profile) {
-  const role = normalizeUserRole(profile?.role)
-
-  if (!profile) {
-    return null
-  }
-
-  if (role === 'super_admin') {
-    return null
-  }
-
-  if (role === 'substation_admin') {
-    const scopedSubstationId = String(profile?.substation_id || profile?.substationId || '').trim()
-    return scopedSubstationId ? [scopedSubstationId] : []
-  }
-
-  if (Array.isArray(profile.allowed_substation_ids)) {
-    return profile.allowed_substation_ids
-  }
-
-  return listUserSubstationMappings()
-    .filter((item) => item.userId === profile.auth_user_id || item.userId === profile.id)
-    .map((item) => item.substationId)
+export function getAllowedSubstationIds(profile, substations = null) {
+  const resolvedSubstations = Array.isArray(substations) ? substations : readReferenceCache().substations || []
+  const mappings = readMappings()
+  const allowed = getAllowedSubstationIdsForUser({
+    profile,
+    substations: resolvedSubstations,
+    mappings,
+  })
+  return allowed
 }
 
 export function assertSubstationAccess(profile, substationId) {
-  const role = normalizeUserRole(profile?.role)
-
-  if (!substationId || !profile || role === 'super_admin') {
+  if (!substationId || !profile) {
     return
   }
-
-  const allowedSubstationIds = getAllowedSubstationIds(profile)
-
-  if (allowedSubstationIds && !allowedSubstationIds.includes(substationId)) {
+  const substations = readReferenceCache().substations || []
+  const mappings = readMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({ profile, substations, mappings })
+  if (allowedSubstationIds !== null && !allowedSubstationIds.includes(substationId)) {
+    console.warn('[access:block]', {
+      role: normalizeUserRole(profile?.role),
+      profileId: profile?.id || profile?.auth_user_id,
+      allowedSubstationIds,
+      selectedSubstationId: substationId,
+    })
     throw new Error('Ya substation sathi access available nahi.')
   }
+}
+
+export function getAllowedSubstationsForUser(profile, substations = [], mappings = []) {
+  return getAllowedSubstationsForUserFromScope({
+    profile,
+    substations,
+    mappings,
+  })
+}
+
+export function canAccessSubstation(profile, substationId, substations = [], mappings = []) {
+  return canAccessSubstationForUser({
+    profile,
+    substationId,
+    substations,
+    mappings,
+  })
 }
 
 function isNoticeVisibleForProfile(notice, profile) {
@@ -543,8 +535,8 @@ export async function loadReferenceData(profile) {
   if (isLocalSqlMode) {
     try {
       const [substationRows, employeeRows, config] = await Promise.all([
-        localListSubstations(),
-        localListEmployees(),
+        localListSubstations({ actor: profile }),
+        localListEmployees({ actor: profile }),
         localGetWorkspaceConfig(),
       ])
 
@@ -568,15 +560,27 @@ export async function loadReferenceData(profile) {
     }
   }
 
-  const allowedSubstationIds = getAllowedSubstationIds(profile)
-
-  const visibleSubstations = allowedSubstationIds
-    ? substations.filter((item) => allowedSubstationIds.includes(item.id))
-    : substations
+  const mappings = readMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({
+    profile,
+    substations,
+    mappings,
+  })
+  const visibleSubstations = getAllowedSubstationsForUserFromScope({
+    profile,
+    substations,
+    mappings,
+  })
 
   const visibleEmployees = allowedSubstationIds
     ? employees.filter((item) => allowedSubstationIds.includes(item.substation_id))
     : employees
+
+  console.info('[access:reference-data]', {
+    role: normalizeUserRole(profile?.role),
+    profileId: profile?.id || profile?.auth_user_id,
+    allowedSubstationIds,
+  })
 
   return {
     substations: visibleSubstations,
@@ -685,6 +689,19 @@ export function listDlrRecords(filters = {}) {
   const allowedSubstationIds = filters.profile
     ? getAllowedSubstationIds(filters.profile)
     : null
+  if (filters.profile) {
+    console.info('[access:listDlrRecords]', {
+      role: normalizeUserRole(filters.profile?.role),
+      profileId: filters.profile?.id || filters.profile?.auth_user_id,
+      allowedSubstationIds,
+      queryFilters: {
+        moduleName: filters.moduleName || '',
+        substationId: filters.substationId || '',
+        operationalDate: filters.operationalDate || '',
+        monthKey: filters.monthKey || '',
+      },
+    })
+  }
 
   return readDlrRecords()
     .filter((item) => !filters.moduleName || item.moduleName === filters.moduleName)
