@@ -130,7 +130,7 @@ export default function LoginPage() {
       <section className="auth-side-panel">
         <Qt33OffsiteBrand variant="login" />
         <p className="eyebrow">{backendLabel} Access Layer</p>
-        <h1>Unified MSEDCL Workspace</h1>
+        <h1>Unified Substation Workspace</h1>
         <p className="muted-copy">
           Advance DLR ERP cha operational depth ani `firebase_adv` cha modern
           mobile-friendly workflow ekatra anaycha ha nava product base aahe.
