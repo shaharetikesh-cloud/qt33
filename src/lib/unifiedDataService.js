@@ -256,9 +256,78 @@ export function normalizeUserRole(role) {
   return normalizeAccessRole(role)
 }
 
-export function listMasterRecords(type) {
+function normalizeRecordSubstationId(record = {}) {
+  return String(
+    record.substationId ??
+      record.substation_id ??
+      record.substation ??
+      record.stationId ??
+      '',
+  ).trim()
+}
+
+function filterMasterRecordsByAccess(type, records, profile, masters) {
+  if (!profile) {
+    return records
+  }
+
+  const cachedSubstations = readReferenceCache().substations || []
+  const mappings = readMappings()
+  const allowedSubstationIds = getAllowedSubstationIdsForUser({
+    profile,
+    substations: cachedSubstations,
+    mappings,
+  })
+
+  if (allowedSubstationIds === null) {
+    return records
+  }
+
+  const filterByAllowedSubstations = (collection = []) =>
+    collection.filter((item) => {
+      const substationId = normalizeRecordSubstationId(item)
+      return substationId ? allowedSubstationIds.includes(substationId) : false
+    })
+
+  if (type === 'divisions') {
+    const allowedBatterySets = filterByAllowedSubstations(masters?.batterySets || [])
+    const allowedDivisionIds = new Set(
+      allowedBatterySets
+        .map((item) => String(item?.divisionId || item?.division_id || '').trim())
+        .filter(Boolean),
+    )
+
+    const filtered = allowedDivisionIds.size
+      ? records.filter((item) => allowedDivisionIds.has(String(item?.id || '').trim()))
+      : []
+    console.info('[access:masters-filter]', {
+      type,
+      role: normalizeUserRole(profile?.role),
+      profileId: profile?.id || profile?.auth_user_id,
+      allowedSubstationIds,
+      beforeCount: records.length,
+      afterCount: filtered.length,
+    })
+    return filtered
+  }
+
+  const filtered = filterByAllowedSubstations(records)
+  console.info('[access:masters-filter]', {
+    type,
+    role: normalizeUserRole(profile?.role),
+    profileId: profile?.id || profile?.auth_user_id,
+    allowedSubstationIds,
+    beforeCount: records.length,
+    afterCount: filtered.length,
+  })
+  return filtered
+}
+
+export function listMasterRecords(type, options = {}) {
   const masters = readMasters()
-  return masters[type] || []
+  const records = masters[type] || []
+  const profile = options?.profile || (options?.role ? options : null)
+  return filterMasterRecordsByAccess(type, records, profile, masters)
 }
 
 export async function loadWorkspaceConfiguration(actor) {

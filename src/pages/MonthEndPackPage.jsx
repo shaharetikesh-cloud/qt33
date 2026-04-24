@@ -28,7 +28,7 @@ export default function MonthEndPackPage() {
     substations: [],
     employees: [],
   })
-  const [feeders, setFeeders] = useState(listMasterRecords('feeders'))
+  const [feeders, setFeeders] = useState(listMasterRecords('feeders', { profile }))
   const [filters, setFilters] = useState({
     monthKey: toMonthKey(),
     substationId: '',
@@ -52,7 +52,7 @@ export default function MonthEndPackPage() {
       }
 
       setReferenceData(bundle)
-      setFeeders(listMasterRecords('feeders'))
+      setFeeders(listMasterRecords('feeders', { profile }))
       setSettings(getSettingsBundle())
       setFilters((current) => ({
         ...current,

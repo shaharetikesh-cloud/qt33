@@ -59,8 +59,8 @@ export default function BatteryPage() {
   const reportActionsRef = useRef(null)
   const [settings, setSettings] = useState(getSettingsBundle())
   const [referenceData, setReferenceData] = useState({ substations: [], employees: [] })
-  const [divisions, setDivisions] = useState(listMasterRecords('divisions'))
-  const [batterySets, setBatterySets] = useState(listMasterRecords('batterySets'))
+  const [divisions, setDivisions] = useState(listMasterRecords('divisions', { profile }))
+  const [batterySets, setBatterySets] = useState(listMasterRecords('batterySets', { profile }))
   const [records, setRecords] = useState(listDlrRecords({ moduleName: 'battery', profile }))
   const [selectedRecordId, setSelectedRecordId] = useState('')
   const canWriteCurrentRecord = selectedRecordId ? canEditBattery : canCreateBattery
@@ -84,8 +84,8 @@ export default function BatteryPage() {
       await loadDlrRecords({ moduleName: 'battery', profile })
       if (!active) return
       setReferenceData(bundle)
-      setDivisions(listMasterRecords('divisions'))
-      setBatterySets(listMasterRecords('batterySets'))
+      setDivisions(listMasterRecords('divisions', { profile }))
+      setBatterySets(listMasterRecords('batterySets', { profile }))
       setSettings(getSettingsBundle())
       setRecords(listDlrRecords({ moduleName: 'battery', profile }))
       setForm((current) => ({

@@ -425,7 +425,35 @@ export async function localListUsers(filters = {}) {
   let users = await applyMonthlyAutoDisable(data ?? [])
 
   if (actor && role !== 'super_admin') {
+    const actorProfileId = String(actor?.id || '').trim()
+    const actorAuthUserId = String(actor?.auth_user_id || actor?.firebase_uid || '').trim()
+    const actorEmail = String(actor?.email || '').trim().toLowerCase()
+
     users = users.filter((user) => {
+      if (role === 'substation_admin') {
+        const creatorCandidates = [
+          user?.created_by_profile_id,
+          user?.createdByProfileId,
+          user?.created_by_auth_user_id,
+          user?.createdByAuthUserId,
+          user?.parent_admin_id,
+          user?.parentAdminId,
+          user?.created_by,
+          user?.createdBy,
+          user?.created_by_email,
+          user?.createdByEmail,
+        ]
+          .map((value) => String(value || '').trim().toLowerCase())
+          .filter(Boolean)
+        const matchesCreator =
+          (actorProfileId && creatorCandidates.includes(actorProfileId.toLowerCase())) ||
+          (actorAuthUserId && creatorCandidates.includes(actorAuthUserId.toLowerCase())) ||
+          (actorEmail && creatorCandidates.includes(actorEmail))
+        if (!matchesCreator) {
+          return false
+        }
+      }
+
       const substationId = String(user?.substation_id || '').trim()
       if (!substationId) {
         return role === 'substation_admin' ? normalizeAccessRole(user?.role) !== 'super_admin' : true
@@ -842,11 +870,22 @@ export async function localSaveSettingsBundle(data) {
 }
 
 export async function localCreateSubstation(data, actor = null) {
+  const actorProfileId = String(actor?.id || actor?.profile_id || '').trim()
+  const actorAuthUserId = String(
+    actor?.auth_user_id || actor?.authUserId || actor?.firebase_uid || actor?.id || '',
+  ).trim()
+  const actorEmail = String(actor?.email || '').trim().toLowerCase()
   const payload = {
     ...data,
-    created_by_profile_id: actor?.id || null,
-    created_by_auth_user_id: actor?.auth_user_id || actor?.id || '',
-    parent_admin_id: normalizeAccessRole(actor?.role) === 'substation_admin' ? actor?.id || null : null,
+    created_by: actorAuthUserId || actorProfileId || '',
+    createdBy: actorAuthUserId || actorProfileId || '',
+    created_by_profile_id: actorProfileId || null,
+    created_by_auth_user_id: actorAuthUserId,
+    created_by_email: actorEmail || '',
+    parent_admin_id:
+      normalizeAccessRole(actor?.role) === 'substation_admin'
+        ? actorProfileId || actorAuthUserId || null
+        : null,
   }
   const savedRow = await localSaveByScope('substations', payload)
   const row = null
@@ -855,8 +894,7 @@ export async function localCreateSubstation(data, actor = null) {
   const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
   const effectiveSubstationId = row?.id || savedRow?.id
   if (actorRole === 'substation_admin' && !actorSubstationId && effectiveSubstationId) {
-    const actorEmail = String(actor?.email || '').trim().toLowerCase()
-    const actorUserId = String(actor?.auth_user_id || actor?.id || '').trim()
+    const actorUserId = actorAuthUserId
     let updateResult = null
 
     if (actorUserId) {

@@ -61,9 +61,9 @@ const emptyMeterChangeForm = {
 
 function getDailyLogContext(profile) {
   return {
-    feeders: listMasterRecords('feeders'),
-    batterySets: listMasterRecords('batterySets'),
-    transformers: listMasterRecords('transformers'),
+    feeders: listMasterRecords('feeders', { profile }),
+    batterySets: listMasterRecords('batterySets', { profile }),
+    transformers: listMasterRecords('transformers', { profile }),
     records: listDailyLogRecords(listDlrRecords({ moduleName: 'daily_log', profile })),
   }
 }
@@ -199,9 +199,9 @@ export default function DailyLogPage() {
     substations: [],
     employees: [],
   })
-  const [feeders, setFeeders] = useState(listMasterRecords('feeders'))
-  const [batterySets, setBatterySets] = useState(listMasterRecords('batterySets'))
-  const [transformers, setTransformers] = useState(listMasterRecords('transformers'))
+  const [feeders, setFeeders] = useState(listMasterRecords('feeders', { profile }))
+  const [batterySets, setBatterySets] = useState(listMasterRecords('batterySets', { profile }))
+  const [transformers, setTransformers] = useState(listMasterRecords('transformers', { profile }))
   const [records, setRecords] = useState([])
   const [form, setForm] = useState({
     operationalDate: formatIsoDate(new Date()),

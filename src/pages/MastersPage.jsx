@@ -17,6 +17,7 @@ import {
   saveSettingsBundle,
   saveUserSubstationMapping,
 } from '../lib/unifiedDataService'
+import { normalizeAccessRole } from '../lib/substationAccess'
 
 const emptyImportState = {
   error: '',
@@ -66,13 +67,15 @@ function applyFeederCtRatioChange(currentForm, nextCtRatio) {
 
 export default function MastersPage() {
   const { profile, isAdmin, listUsers } = useAuth()
+  const actorRole = normalizeAccessRole(profile?.role)
+  const isSubstationAdmin = actorRole === 'substation_admin'
   const [substations, setSubstations] = useState([])
   const [users, setUsers] = useState([])
   const [settings, setSettings] = useState(getSettingsBundle())
-  const [divisions, setDivisions] = useState(listMasterRecords('divisions'))
-  const [feeders, setFeeders] = useState(listMasterRecords('feeders'))
-  const [batterySets, setBatterySets] = useState(listMasterRecords('batterySets'))
-  const [transformers, setTransformers] = useState(listMasterRecords('transformers'))
+  const [divisions, setDivisions] = useState(listMasterRecords('divisions', { profile }))
+  const [feeders, setFeeders] = useState(listMasterRecords('feeders', { profile }))
+  const [batterySets, setBatterySets] = useState(listMasterRecords('batterySets', { profile }))
+  const [transformers, setTransformers] = useState(listMasterRecords('transformers', { profile }))
   const [mappings, setMappings] = useState([])
   const [importState, setImportState] = useState(emptyImportState)
 
@@ -81,26 +84,50 @@ export default function MastersPage() {
 
     async function bootstrap() {
       const referenceData = await loadReferenceData(profile)
+      const mappingRows = await loadUserSubstationMappings(profile)
 
       if (!active) {
         return
       }
 
       setSubstations(referenceData.substations)
-      setMappings(await loadUserSubstationMappings(profile))
 
       if (isAdmin) {
         try {
           const userRows = await listUsers()
+          const visibleUsers = userRows.users || []
+          const visibleUserIds = new Set(
+            visibleUsers
+              .flatMap((user) => [user?.id, user?.auth_user_id, user?.firebase_uid])
+              .map((value) => String(value || '').trim())
+              .filter(Boolean),
+          )
+          const visibleMappings = isSubstationAdmin
+            ? mappingRows.filter((mapping) =>
+                visibleUserIds.has(
+                  String(
+                    mapping?.userId ??
+                      mapping?.user_id ??
+                      mapping?.profile_id ??
+                      mapping?.auth_user_id ??
+                      '',
+                  ).trim(),
+                ),
+              )
+            : mappingRows
 
           if (active) {
-            setUsers(userRows.users || [])
+            setUsers(visibleUsers)
+            setMappings(visibleMappings)
           }
         } catch {
           if (active) {
             setUsers([])
+            setMappings(isSubstationAdmin ? [] : mappingRows)
           }
         }
+      } else {
+        setMappings(mappingRows)
       }
     }
 
@@ -114,12 +141,44 @@ export default function MastersPage() {
   async function refreshCollections() {
     const referenceData = await loadReferenceData(profile)
     await loadWorkspaceConfiguration(profile)
+    const mappingRows = await loadUserSubstationMappings(profile)
     setSubstations(referenceData.substations)
-    setDivisions(listMasterRecords('divisions'))
-    setFeeders(listMasterRecords('feeders'))
-    setBatterySets(listMasterRecords('batterySets'))
-    setTransformers(listMasterRecords('transformers'))
-    setMappings(await loadUserSubstationMappings(profile))
+    setDivisions(listMasterRecords('divisions', { profile }))
+    setFeeders(listMasterRecords('feeders', { profile }))
+    setBatterySets(listMasterRecords('batterySets', { profile }))
+    setTransformers(listMasterRecords('transformers', { profile }))
+    if (isAdmin) {
+      try {
+        const userRows = await listUsers()
+        const visibleUsers = userRows.users || []
+        const visibleUserIds = new Set(
+          visibleUsers
+            .flatMap((user) => [user?.id, user?.auth_user_id, user?.firebase_uid])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean),
+        )
+        const visibleMappings = isSubstationAdmin
+          ? mappingRows.filter((mapping) =>
+              visibleUserIds.has(
+                String(
+                  mapping?.userId ??
+                    mapping?.user_id ??
+                    mapping?.profile_id ??
+                    mapping?.auth_user_id ??
+                    '',
+                ).trim(),
+              ),
+            )
+          : mappingRows
+        setUsers(visibleUsers)
+        setMappings(visibleMappings)
+      } catch {
+        setUsers([])
+        setMappings(isSubstationAdmin ? [] : mappingRows)
+      }
+    } else {
+      setMappings(mappingRows)
+    }
     setSettings(getSettingsBundle())
   }
 
@@ -225,10 +284,16 @@ export default function MastersPage() {
     label: item.name,
   }))
 
-  const userOptions = users.map((item) => ({
-    value: item.auth_user_id,
-    label: `${item.full_name || item.email} (${item.email})`,
-  }))
+  const userOptions = users.flatMap((item) => {
+    const label = `${item.full_name || item.email} (${item.email})`
+    const candidateIds = [item.id, item.auth_user_id, item.firebase_uid]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+    return Array.from(new Set(candidateIds)).map((value) => ({
+      value,
+      label,
+    }))
+  })
 
   if (!isAdmin) {
     return (

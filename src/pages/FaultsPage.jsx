@@ -46,7 +46,7 @@ export default function FaultsPage() {
     substations: [],
     employees: [],
   })
-  const [feeders, setFeeders] = useState(listMasterRecords('feeders'))
+  const [feeders, setFeeders] = useState(listMasterRecords('feeders', { profile }))
   const [records, setRecords] = useState(listDlrRecords({ moduleName: 'fault', profile }))
   const [form, setForm] = useState(blankForm)
   const [status, setStatus] = useState('')
@@ -64,7 +64,7 @@ export default function FaultsPage() {
       }
 
       setReferenceData(bundle)
-      setFeeders(listMasterRecords('feeders'))
+      setFeeders(listMasterRecords('feeders', { profile }))
       setRecords(listDlrRecords({ moduleName: 'fault', profile }))
       setSettings(getSettingsBundle())
       setForm((current) => ({

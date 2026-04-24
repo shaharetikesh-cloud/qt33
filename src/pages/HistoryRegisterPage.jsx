@@ -187,7 +187,7 @@ export default function HistoryRegisterPage() {
       ])
       if (!active) return
       setReferenceData(bundle)
-      setFeeders(listMasterRecords('feeders'))
+      setFeeders(listMasterRecords('feeders', { profile }))
       if (Array.isArray(cloudAssets) && cloudAssets.length) {
         writeAssets(cloudAssets)
         setAssets(cloudAssets)

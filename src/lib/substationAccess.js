@@ -30,6 +30,7 @@ export function resolveProfileIds(profile) {
     profileId: toId(profile?.id),
     authUserId: toId(profile?.auth_user_id || profile?.authUserId || profile?.firebase_uid),
     substationId: toId(profile?.substation_id || profile?.substationId),
+    email: toId(profile?.email).toLowerCase(),
   }
 }
 
@@ -49,10 +50,15 @@ function isOwnedBySubstationAdmin(substation, ids) {
     substation?.createdByAuthUserId,
     substation?.created_by_user_id,
     substation?.createdByUserId,
+    substation?.created_by_email,
+    substation?.createdByEmail,
   ]
     .map(toId)
     .filter(Boolean)
-  return candidates.includes(ids.profileId) || candidates.includes(ids.authUserId)
+  if (ids.email) {
+    candidates.push(ids.email)
+  }
+  return candidates.includes(ids.profileId) || candidates.includes(ids.authUserId) || candidates.includes(ids.email)
 }
 
 export function getAllowedSubstationIdsForUser({

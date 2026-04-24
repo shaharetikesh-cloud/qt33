@@ -38,7 +38,7 @@ export default function ReportCenterPage() {
     substations: [],
     employees: [],
   })
-  const [feeders, setFeeders] = useState(listMasterRecords('feeders'))
+  const [feeders, setFeeders] = useState(listMasterRecords('feeders', { profile }))
   const [filters, setFilters] = useState({
     monthKey: toMonthKey(),
     substationId: '',
@@ -63,7 +63,7 @@ export default function ReportCenterPage() {
       }
 
       setReferenceData(bundle)
-      setFeeders(listMasterRecords('feeders'))
+      setFeeders(listMasterRecords('feeders', { profile }))
       setSettings(getSettingsBundle())
       setFilters((current) => ({
         ...current,
