@@ -1,0 +1,4 @@
+feeder_id,substation_id,name,feeder_type,ct_ratio,mf,parent_feeder_id,is_incomer,sort_order,is_active,include_in_total
+FD001,SS001,INC-1,main_incoming,400/5,1,,TRUE,1,TRUE,TRUE
+FD002,SS001,INC-2,main_incoming,400/5,1,,TRUE,2,TRUE,TRUE
+FD003,SS001,FDR-A,normal,200/5,1,FD001,FALSE,3,TRUE,TRUE

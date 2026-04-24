@@ -1,0 +1,6 @@
+{
+  "projectId": "web-connected-legacy-mirror",
+  "projectName": "Legacy mirror of QT33 Web + Connected APK",
+  "purpose": "Legacy duplicate tree retained for fallback/reference only.",
+  "deployAllowed": false
+}

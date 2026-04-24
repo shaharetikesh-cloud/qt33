@@ -1,0 +1,6 @@
+{
+  "projectId": "web-connected-canonical",
+  "projectName": "QT33 Web + Connected Capacitor APK",
+  "purpose": "Single source of truth for deployed web app and connected capacitor mobile app.",
+  "deployAllowed": true
+}

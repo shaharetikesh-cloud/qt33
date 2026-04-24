@@ -1,0 +1,6 @@
+{
+  "projectId": "mobile-offline-flutter",
+  "projectName": "QT33 Flutter Offline APK",
+  "purpose": "Independent offline-first mobile app built with Flutter.",
+  "deployAllowed": false
+}

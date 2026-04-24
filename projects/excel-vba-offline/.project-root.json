@@ -1,0 +1,6 @@
+{
+  "projectId": "excel-vba-offline",
+  "projectName": "MSEDCL Excel VBA Offline System",
+  "deployAllowed": false,
+  "notes": "Offline Excel/VBA project. Do not run web or flutter deploy commands here."
+}

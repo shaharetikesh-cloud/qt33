@@ -1,0 +1,6 @@
+{
+  "appId": "in.qt33.mobile",
+  "appName": "QT33",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

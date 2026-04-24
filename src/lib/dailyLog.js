@@ -1,5 +1,10 @@
 import { compareByDate, formatDate, getDayName } from './dateUtils'
 import { formatInteger, formatNumber, safeText } from './reportFormats'
+import {
+  getInterruptionOverlayHourIndexes,
+  parseTimeToMinutes,
+  timeToHourIndex,
+} from './interruptionSlots'
 
 export const DAILY_LOG_HOURS = Array.from({ length: 25 }, (_, index) =>
   `${String(index).padStart(2, '0')}:00`,
@@ -458,33 +463,6 @@ function stripDerivedRows(rows = [], config) {
   }))
 }
 
-function parseTimeToMinutes(value) {
-  const matched = String(value || '')
-    .trim()
-    .match(/^(\d{2}):(\d{2})$/)
-
-  if (!matched) {
-    return null
-  }
-
-  const hours = Number(matched[1])
-  const minutes = Number(matched[2])
-
-  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || minutes < 0 || minutes > 59) {
-    return null
-  }
-
-  if (hours === 24) {
-    return minutes === 0 ? 24 * 60 : null
-  }
-
-  if (hours < 0 || hours > 23) {
-    return null
-  }
-
-  return hours * 60 + minutes
-}
-
 function compareHourValues(left, right) {
   return timeToHourIndex(left) - timeToHourIndex(right)
 }
@@ -578,17 +556,6 @@ function buildSoftAmpValues(previousAmp, nextAmp, intervalCount) {
   )
 }
 
-function timeToHourIndex(value, preferEnd = false) {
-  const minutes = parseTimeToMinutes(value)
-
-  if (minutes === null) {
-    return -1
-  }
-
-  const rawIndex = preferEnd ? Math.ceil(minutes / 60) : Math.floor(minutes / 60)
-  return Math.max(0, Math.min(24, rawIndex))
-}
-
 function isActualAnchor(reading) {
   const kwh = numericOrNull(reading?.kwh)
   const entryMode = reading?.metadata?.entryMode || ''
@@ -600,19 +567,30 @@ function isActualAnchor(reading) {
   return entryMode !== 'estimated'
 }
 
-function buildExplicitOverlayMap(interruptions) {
+function hasStartHourReading(rows = [], feederId, startHourIndex) {
+  const reading = rows[startHourIndex]?.feederReadings?.[feederId]
+  return numericOrNull(reading?.kwh) !== null
+}
+
+function buildExplicitOverlayMap(interruptions, rows = []) {
   const overlayMap = new Map()
 
   interruptions.forEach((interruption) => {
-    const startHourIndex = timeToHourIndex(interruption.from_time)
-    const endHourIndex = timeToHourIndex(interruption.to_time, true)
-
-    if (startHourIndex < 0 || endHourIndex < 0 || endHourIndex < startHourIndex) {
-      return
-    }
-
     ;(interruption.affectedFeederIds || [interruption.feeder_id]).forEach((feederId) => {
-      for (let hourIndex = startHourIndex; hourIndex < endHourIndex; hourIndex += 1) {
+      const startHourIndex = timeToHourIndex(interruption.from_time)
+      const startHourHasReading = hasStartHourReading(rows, feederId, startHourIndex)
+      // If start-hour has an actual reading, LS starts from next hour.
+      // We still preserve interruption duration count after this shift.
+      // Example: 22:00->24:00 with 22:00 reading => LS overlays 23:00 and 24:00.
+      const overlayHours = getInterruptionOverlayHourIndexes({
+        fromTime: interruption.from_time,
+        toTime: interruption.to_time,
+        excludeStartHourSlot: startHourHasReading,
+        preserveDurationWhenShifted: true,
+      })
+      if (!overlayHours.length) return
+
+      for (const hourIndex of overlayHours) {
         overlayMap.set(`${feederId}:${hourIndex}`, {
           code: interruption.event_type,
           source: interruption.source || 'explicit',
@@ -1019,7 +997,7 @@ export function applyAutomaticKwhGapFill(rows, feederId, currentRowIndex, interr
     }
   }
 
-  const explicitOverlayMap = buildExplicitOverlayMap(interruptions)
+  const explicitOverlayMap = buildExplicitOverlayMap(interruptions, rows)
   const gapIndexes = getEstimatableGapIndexes(
     rows,
     feederId,
@@ -2025,7 +2003,7 @@ export function deriveDailyLogState(form, config) {
       }
     })
 
-  const explicitOverlayMap = buildExplicitOverlayMap(normalizedInterruptions)
+  const explicitOverlayMap = buildExplicitOverlayMap(normalizedInterruptions, validatedBaseRows)
   const autoLsState = buildAutoLsState(validatedBaseRows, config, explicitOverlayMap, dayStatus)
   const overlayMap = new Map([
     ...autoLsState.autoOverlayMap.entries(),

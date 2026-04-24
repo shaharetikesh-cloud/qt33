@@ -1,5 +1,20 @@
 # Unified MSEDCL Workspace
 
+## Important: working roots after migration
+
+Read `MIGRATION_NOTICE.md` first.
+
+Canonical working paths:
+
+- `projects/web-connected`
+- `projects/mobile-offline-flutter`
+- `projects/excel-vba-offline`
+
+Do not run active work from:
+
+- `qt33` (legacy mirror)
+- `archive/legacy-duplicates/*` (read-only archive)
+
 This folder is a new standalone project created to combine:
 
 - `Advance DLR ERP` operational workflows currently backed by Supabase

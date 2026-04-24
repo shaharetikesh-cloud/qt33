@@ -1,0 +1,21 @@
+# 14) Testing checklist
+
+- [ ] Dashboard loads and opens each module form.
+- [ ] Master save/edit/delete works and validates required fields.
+- [ ] DLR allows 25 hourly rows and normalizes time formats (930, 1000, 2400).
+- [ ] Carry-forward opening KWH loads from previous day.
+- [ ] Event codes display correctly and do not break numeric totals/min-max.
+- [ ] Auto LS creation works on finalize for unresolved trailing gaps.
+- [ ] Fault duplicate prevention blocks exact duplicate events.
+- [ ] Battery report calculates min/max/total/condition correctly.
+- [ ] Charge handover carries pending items to next shift/date.
+- [ ] History register appends lifecycle updates.
+- [ ] Operator shift auto pattern works (OFF->II->III->I) and manual override persists.
+- [ ] Night allowance statement equals III count * rate.
+- [ ] Attendance print shows name + CPF second line.
+- [ ] Monthly reports generate without missing feeder links.
+- [ ] Month-end pack composes all required sections.
+- [ ] PDF export matches print preview.
+- [ ] CSV/Excel export output columns are mapped correctly.
+- [ ] Full backup and restore recover all master + transaction data.
+- [ ] Performance check: bulk save/export without UI freeze.

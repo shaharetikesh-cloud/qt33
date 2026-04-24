@@ -1,0 +1,4 @@
+employee_id,name,designation,employee_type,cpf_no,substation_id,weekly_off,general_duty_flag,vacancy_flag,is_active
+EMP001,Operator One,Operator,operator,1234567,SS001,0,TRUE,FALSE,TRUE
+EMP002,Operator Two,Operator,operator,2234567,SS001,1,FALSE,FALSE,TRUE
+EMP003,Tech One,Technician,technician,3234567,SS001,0,FALSE,FALSE,TRUE
