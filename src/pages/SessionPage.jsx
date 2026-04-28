@@ -8,6 +8,18 @@ import {
 import { alertDetailSaved } from '../lib/detailSavedAlert'
 import { loadSessionActivity } from '../lib/unifiedDataService'
 
+function resolveDisplayUsername(profile, sessionUser) {
+  const direct = String(profile?.username || sessionUser?.username || '').trim()
+  if (direct) return direct
+
+  const email = String(profile?.email || sessionUser?.email || '').trim().toLowerCase()
+  if (email.includes('@')) {
+    return email.split('@')[0]
+  }
+
+  return String(profile?.full_name || '').trim() || 'Not set'
+}
+
 export default function SessionPage() {
   const {
     profile,
@@ -109,7 +121,7 @@ export default function SessionPage() {
           </article>
           <article className="detail-card">
             <h3>Username</h3>
-            <p>{profile?.username || session?.user?.username || 'Not available'}</p>
+            <p>{resolveDisplayUsername(profile, session?.user)}</p>
           </article>
           <article className="detail-card">
             <h3>Role</h3>

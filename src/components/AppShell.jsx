@@ -62,6 +62,18 @@ function getWorkspaceRouteKey(pathname) {
   return first.replace(/[^a-z0-9-]/gi, '') || 'workspace'
 }
 
+function resolveDisplayUsername(profile, sessionUser) {
+  const direct = String(profile?.username || sessionUser?.username || '').trim()
+  if (direct) return direct
+
+  const email = String(profile?.email || sessionUser?.email || '').trim().toLowerCase()
+  if (email.includes('@')) {
+    return email.split('@')[0]
+  }
+
+  return String(profile?.full_name || '').trim() || 'Not set'
+}
+
 export default function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -219,6 +231,7 @@ export default function AppShell() {
 
   useEffect(() => {
     let syncDebounceTimer = null
+    let periodicSyncTimer = null
 
     function scheduleForegroundSync() {
       if (syncDebounceTimer) {
@@ -241,10 +254,18 @@ export default function AppShell() {
 
     window.addEventListener('focus', handleWindowFocus)
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    periodicSyncTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        scheduleForegroundSync()
+      }
+    }, 5000)
 
     return () => {
       window.removeEventListener('focus', handleWindowFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (periodicSyncTimer) {
+        window.clearInterval(periodicSyncTimer)
+      }
       if (syncDebounceTimer) {
         window.clearTimeout(syncDebounceTimer)
       }
@@ -567,9 +588,7 @@ export default function AppShell() {
                 <div className="workspace-profile-menu">
                   <div className="workspace-profile-menu-header">
                     <strong>{currentUserName}</strong>
-                    <span>
-                      {profile?.username || session?.user?.username || 'No username available'}
-                    </span>
+                    <span>{resolveDisplayUsername(profile, session?.user)}</span>
                   </div>
                   <div className="workspace-profile-meta">
                     <div>

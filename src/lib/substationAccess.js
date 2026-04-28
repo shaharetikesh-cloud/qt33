@@ -92,7 +92,7 @@ export function getAllowedSubstationIdsForUser({
       .filter((substation) => isOwnedBySubstationAdmin(substation, ids))
       .map((substation) => toId(substation?.id))
       .filter(Boolean)
-    return Array.from(new Set([ids.substationId, ...fromMappings, ...ownedSubstations].filter(Boolean)))
+    return Array.from(new Set([...fromMappings, ...ownedSubstations].filter(Boolean)))
   }
 
   return Array.from(new Set([ids.substationId, ...fromMappings].filter(Boolean)))

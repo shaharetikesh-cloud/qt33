@@ -19,6 +19,7 @@ import { firebaseAuth } from './firebase'
 import { firebaseApp } from './firebase'
 import {
   idbDeleteRecord,
+  idbListPendingOutbox,
   idbListRecords,
   idbPutRecord,
   idbQueueDelete,
@@ -872,7 +873,12 @@ export async function localSaveSettingsBundle(data) {
 export async function localCreateSubstation(data, actor = null) {
   const actorProfileId = String(actor?.id || actor?.profile_id || '').trim()
   const actorAuthUserId = String(
-    actor?.auth_user_id || actor?.authUserId || actor?.firebase_uid || actor?.id || '',
+    actor?.auth_user_id ||
+      actor?.authUserId ||
+      actor?.firebase_uid ||
+      firebaseAuth?.currentUser?.uid ||
+      actor?.id ||
+      '',
   ).trim()
   const actorEmail = String(actor?.email || '').trim().toLowerCase()
   const payload = {
@@ -915,6 +921,34 @@ export async function localCreateSubstation(data, actor = null) {
 
     if (updateResult?.error) {
       throw updateResult.error
+    }
+  }
+
+  if (supabase && navigator.onLine && effectiveSubstationId) {
+    try {
+      await triggerSync()
+      const pendingOutbox = await idbListPendingOutbox(300)
+      const stillPending = pendingOutbox.find(
+        (item) =>
+          (item.entity_type || item.scope) === 'substations' &&
+          item.id === effectiveSubstationId &&
+          item.operation_type !== 'delete',
+      )
+      if (stillPending) {
+        console.warn('[sync:substation:create:pending]', {
+          substationId: effectiveSubstationId,
+          retryCount: stillPending.retry_count || 0,
+          lastError: stillPending.last_error || '',
+        })
+        throw new Error(
+          'Substation local save zala, pan cloud sync pending aahe. Network/Supabase access check kara.',
+        )
+      }
+    } catch (syncError) {
+      if (syncError instanceof Error) {
+        throw syncError
+      }
+      throw new Error('Substation save zala, pan immediate cloud sync verify hou shakla nahi.')
     }
   }
 
