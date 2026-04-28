@@ -741,10 +741,22 @@ export function BatteryReportView({
   footerText,
 }) {
   const columns = [
-    { key: 'srNo', label: 'Sr No', align: 'center', render: (row, index) => index + 1 },
-    { key: 'specificGravity', label: 'Per Cell S.P. Gravity', align: 'right', render: (row) => formatNumber(row.specificGravity) },
-    { key: 'voltage', label: 'Per Cell Voltage', align: 'right', render: (row) => formatNumber(row.voltage) },
-    { key: 'condition', label: 'Cell Condition' },
+    { key: 'srNo', label: 'Sr No', align: 'center', width: '30px', render: (row, index) => index + 1 },
+    {
+      key: 'specificGravity',
+      label: 'Per Cell S.P. Gravity',
+      align: 'right',
+      width: '72px',
+      render: (row) => formatNumber(row.specificGravity),
+    },
+    {
+      key: 'voltage',
+      label: 'Per Cell Voltage',
+      align: 'right',
+      width: '52px',
+      render: (row) => formatNumber(row.voltage),
+    },
+    { key: 'condition', label: 'Cell Condition', width: '68px' },
   ]
 
   const summaryRows = [
@@ -761,30 +773,41 @@ export function BatteryReportView({
       condition: report.analysis.voltageMin >= 1.95 ? 'Within range' : 'Needs attention',
     },
   ]
+  const checklistRows = Object.entries(report.checklist || {})
 
   return (
     <ReportDocument documentRef={documentRef} orientation={report.orientation} reportType="battery" title={report.title}>
       <ReportHeader companyName={report.companyName} title={report.title} />
       <MetadataGrid items={report.metadata} />
       <section className="battery-report-grid">
-        <div>
+        <div className="battery-main-panel">
           <ReportTable columns={columns} rows={report.cells} chunkSize={24} />
           <div className="battery-total-bar">
             <span>Total Voltage</span>
             <strong>{formatNumber(report.analysis.totalVoltage)}</strong>
           </div>
         </div>
+
         <div className="battery-side-panel">
           <SectionTitle>Weekly Maintenance Checklist</SectionTitle>
           <div className="checklist-stack">
-            {Object.entries(report.checklist).map(([label, value]) => (
-              <div key={label} className="checklist-row">
-                <span>{label}</span>
-                <strong>{value ? 'Yes' : 'No'}</strong>
+            {checklistRows.length ? (
+              checklistRows.map(([label, value]) => (
+                <div key={label} className="checklist-row">
+                  <span>{label}</span>
+                  <strong>{value ? 'Yes' : 'No'}</strong>
+                </div>
+              ))
+            ) : (
+              <div className="checklist-row">
+                <span>No checklist entries</span>
+                <strong>-</strong>
               </div>
-            ))}
+            )}
           </div>
-          {renderRemarkBlock('Generated Remark', report.analysis.remark)}
+
+          {renderRemarkBlock('Remark', report.remark || report.analysis.remark)}
+
           <SectionTitle>Battery Summary</SectionTitle>
           <ReportTable
             columns={[

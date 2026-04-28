@@ -2,6 +2,12 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 const REPORT_RENDER_SCALE = 2
+const PDF_MARGIN_MM = {
+  left: 25.4,   // 1.0 inch
+  right: 12.7,  // 0.5 inch
+  top: 12.7,    // 0.5 inch
+  bottom: 12.7, // 0.5 inch
+}
 
 async function waitForReportAssets(element) {
   if (document.fonts?.ready) {
@@ -33,12 +39,14 @@ async function waitForReportAssets(element) {
 }
 
 function createRenderSandbox(element) {
+  const sourceRect = element.getBoundingClientRect()
+  const sandboxWidth = Math.max(Math.ceil(sourceRect.width || 0), 920)
   const sandbox = document.createElement('div')
   sandbox.setAttribute('data-report-render-sandbox', 'true')
   sandbox.style.position = 'fixed'
   sandbox.style.left = '-200vw'
   sandbox.style.top = '0'
-  sandbox.style.width = '1600px'
+  sandbox.style.width = `${sandboxWidth}px`
   sandbox.style.padding = '0'
   sandbox.style.margin = '0'
   sandbox.style.background = '#ffffff'
@@ -54,7 +62,7 @@ function createRenderSandbox(element) {
   clone.style.position = 'static'
   clone.style.margin = '0'
   clone.style.maxWidth = 'none'
-  clone.style.width = 'fit-content'
+  clone.style.width = '100%'
 
   sandbox.appendChild(clone)
   document.body.appendChild(sandbox)
@@ -108,7 +116,7 @@ async function renderCanvas(element) {
 
         clonedReport.style.margin = '0'
         clonedReport.style.maxWidth = 'none'
-        clonedReport.style.width = `${width}px`
+        clonedReport.style.width = '100%'
         clonedReport.style.boxShadow = 'none'
         clonedReport.style.display = 'block'
         clonedReport.style.visibility = 'visible'
@@ -176,8 +184,28 @@ export async function exportElementToPdf(element, options = {}) {
   const { canvas, rowAnchors } = await renderCanvas(element)
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
-  const pxPerMm = canvas.width / pageWidth
-  const pageHeightPx = Math.max(Math.floor(pageHeight * pxPerMm), 1)
+  const marginLeft = Number(options.marginLeftMm ?? PDF_MARGIN_MM.left)
+  const marginRight = Number(options.marginRightMm ?? PDF_MARGIN_MM.right)
+  const marginTop = Number(options.marginTopMm ?? PDF_MARGIN_MM.top)
+  const marginBottom = Number(options.marginBottomMm ?? PDF_MARGIN_MM.bottom)
+  const contentWidth = Math.max(pageWidth - marginLeft - marginRight, 10)
+  const contentHeight = Math.max(pageHeight - marginTop - marginBottom, 10)
+  if (options.fitToSinglePage) {
+    const imageData = canvas.toDataURL('image/png')
+    const ratio = Math.min(contentWidth / canvas.width, contentHeight / canvas.height)
+    const drawWidth = canvas.width * ratio
+    const drawHeight = canvas.height * ratio
+    const offsetX = marginLeft + (contentWidth - drawWidth) / 2
+    const offsetY = marginTop + (contentHeight - drawHeight) / 2
+    pdf.addImage(imageData, 'PNG', offsetX, offsetY, drawWidth, drawHeight, undefined, 'FAST')
+    if (options.filename) {
+      pdf.save(options.filename)
+    }
+    return pdf.output('blob')
+  }
+
+  const pxPerMm = canvas.width / contentWidth
+  const pageHeightPx = Math.max(Math.floor(contentHeight * pxPerMm), 1)
 
   let pageIndex = 0
 
@@ -215,7 +243,16 @@ export async function exportElementToPdf(element, options = {}) {
 
     const imageData = pageCanvas.toDataURL('image/png')
     const sliceHeightMm = sliceHeightPx / pxPerMm
-    pdf.addImage(imageData, 'PNG', 0, 0, pageWidth, sliceHeightMm, undefined, 'FAST')
+    pdf.addImage(
+      imageData,
+      'PNG',
+      marginLeft,
+      marginTop,
+      contentWidth,
+      sliceHeightMm,
+      undefined,
+      'FAST',
+    )
     pageIndex += 1
   }
 

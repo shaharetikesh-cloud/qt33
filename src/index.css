@@ -2128,6 +2128,57 @@ textarea {
   gap: 4mm;
 }
 
+.battery-report-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.battery-main-panel {
+  min-width: 0;
+}
+
+.report-battery .battery-main-panel .report-table-shell {
+  overflow: visible;
+}
+
+.report-battery .battery-main-panel .report-table-shell .report-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.report-battery .battery-main-panel .report-table th,
+.report-battery .battery-main-panel .report-table td {
+  padding: 2px 4px;
+  font-size: 8.8pt;
+  white-space: nowrap;
+}
+
+.report-battery .battery-main-panel .report-table th {
+  font-size: 8.3pt;
+  font-weight: 700;
+}
+
+.report-battery .battery-side-panel .report-table-shell {
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+
+.report-battery .battery-side-panel .report-table-shell .report-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.report-battery .battery-side-panel .report-table th,
+.report-battery .battery-side-panel .report-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 7.2pt;
+  padding: 2px 4px;
+}
+
 .battery-side-panel {
   display: flex;
   flex-direction: column;

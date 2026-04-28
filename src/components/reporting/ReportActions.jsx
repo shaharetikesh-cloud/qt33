@@ -17,6 +17,7 @@ export default function ReportActions({
   filenameBase,
   orientation = 'portrait',
   pageSize = 'a4',
+  fitToSinglePage = false,
   jsonData,
   csvRows,
   workbookSheets,
@@ -56,6 +57,7 @@ export default function ReportActions({
     return exportElementToPdf(documentRef.current, {
       orientation,
       pageSize,
+      fitToSinglePage,
       ...options,
     })
   }

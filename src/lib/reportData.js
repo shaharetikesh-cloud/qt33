@@ -777,6 +777,7 @@ export function buildBatteryReport({
       operator: record?.payload?.operatorName || '',
       inCharge: record?.payload?.inChargeName || '',
     },
+    remark: safeText(record?.payload?.remark, ''),
     companyName: companyProfile.companyName,
   }
 }

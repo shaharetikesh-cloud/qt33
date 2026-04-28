@@ -46,7 +46,6 @@ function buildCells(count) {
     specificGravity: '',
     voltage: '',
     condition: '',
-    remark: '',
   }))
 }
 
@@ -71,6 +70,7 @@ export default function BatteryPage() {
     batterySetId: '',
     operatorName: '',
     inChargeName: '',
+    remark: '',
     checklist: defaultChecklist,
     cells: buildCells(24),
   })
@@ -110,6 +110,7 @@ export default function BatteryPage() {
       cells: deferredForm.cells,
       operatorName: deferredForm.operatorName,
       inChargeName: deferredForm.inChargeName,
+      remark: deferredForm.remark,
     },
   }), [deferredForm])
 
@@ -167,6 +168,7 @@ export default function BatteryPage() {
           cells: form.cells,
           operatorName: form.operatorName,
           inChargeName: form.inChargeName,
+          remark: form.remark,
         },
       }, profile)
       setRecords(await loadDlrRecords({ moduleName: 'battery', profile }))
@@ -195,9 +197,10 @@ export default function BatteryPage() {
       batterySetId: record.payload?.batterySetId || '',
       operatorName: record.payload?.operatorName || '',
       inChargeName: record.payload?.inChargeName || '',
+      remark: record.payload?.remark || '',
       checklist: { ...defaultChecklist, ...(record.payload?.checklist || {}) },
       cells: record.payload?.cells?.length
-        ? record.payload.cells.map((c) => ({ remark: '', ...c }))
+        ? record.payload.cells.map((c) => ({ ...c }))
         : buildCells(24),
     })
   }
@@ -419,6 +422,16 @@ export default function BatteryPage() {
               onChange={(e) => setForm((c) => ({ ...c, inChargeName: e.target.value }))}
             />
           </div>
+          <div>
+            <label htmlFor="battery-remark">Remark</label>
+            <input
+              id="battery-remark"
+              value={form.remark}
+              disabled={!canWriteCurrentRecord}
+              onChange={(e) => setForm((c) => ({ ...c, remark: e.target.value }))}
+              placeholder="Enter weekly remark"
+            />
+          </div>
         </div>
 
         {/* Checklist */}
@@ -452,7 +465,6 @@ export default function BatteryPage() {
               <col className="batt-col-gravity" />
               <col className="batt-col-voltage" />
               <col className="batt-col-condition" />
-              <col className="batt-col-remark" />
             </colgroup>
             <thead>
               <tr>
@@ -460,7 +472,6 @@ export default function BatteryPage() {
                 <th>S.P. Gravity<br /><small className="batt-th-hint">1.100 – 1.280</small></th>
                 <th>Cell Voltage<br /><small className="batt-th-hint">Volts</small></th>
                 <th>Condition<br /><small className="batt-th-hint">auto</small></th>
-                <th>Remark</th>
               </tr>
             </thead>
             <tbody>
@@ -495,16 +506,6 @@ export default function BatteryPage() {
                         ? <span className={`batt-badge batt-badge-${cond.toLowerCase()}`}>{cond}</span>
                         : <span className="batt-badge-empty">—</span>
                       }
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        className="batt-remark-input"
-                        placeholder="Remark…"
-                        value={cell.remark || ''}
-                        disabled={!canWriteCurrentRecord}
-                        onChange={(e) => updateCell(index, 'remark', e.target.value)}
-                      />
                     </td>
                   </tr>
                 )
@@ -612,6 +613,7 @@ export default function BatteryPage() {
             documentRef={documentRef}
             filenameBase={`battery-${previewRecord.operationalDate}-${substation?.name || 'substation'}`}
             orientation={report.orientation}
+            fitToSinglePage
             jsonData={report}
             csvRows={report.cells}
             workbookSheets={[
