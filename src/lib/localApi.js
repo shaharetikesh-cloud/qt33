@@ -890,7 +890,7 @@ export async function localCreateSubstation(data, actor = null) {
   const savedRow = await localSaveByScope('substations', payload)
   const row = null
 
-  const actorRole = String(actor?.role || '').trim().toLowerCase()
+  const actorRole = normalizeAccessRole(actor?.role)
   const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
   const effectiveSubstationId = row?.id || savedRow?.id
   if (actorRole === 'substation_admin' && !actorSubstationId && effectiveSubstationId) {

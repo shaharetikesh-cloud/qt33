@@ -27,7 +27,7 @@ export function normalizeAccessRole(role) {
 
 export function resolveProfileIds(profile) {
   return {
-    profileId: toId(profile?.id),
+    profileId: toId(profile?.id || profile?.profile_id),
     authUserId: toId(profile?.auth_user_id || profile?.authUserId || profile?.firebase_uid),
     substationId: toId(profile?.substation_id || profile?.substationId),
     email: toId(profile?.email).toLowerCase(),
@@ -77,7 +77,12 @@ export function getAllowedSubstationIdsForUser({
   const fromMappings = (mappings || [])
     .filter((item) => {
       const userId = toId(item?.userId || item?.user_id || item?.profile_id || item?.auth_user_id)
-      return userId === ids.profileId || userId === ids.authUserId
+      if (!userId) {
+        return false
+      }
+      const matchesProfileId = ids.profileId && userId === ids.profileId
+      const matchesAuthUserId = ids.authUserId && userId === ids.authUserId
+      return Boolean(matchesProfileId || matchesAuthUserId)
     })
     .map((item) => toId(item?.substationId || item?.substation_id))
     .filter(Boolean)
