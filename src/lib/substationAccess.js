@@ -92,7 +92,9 @@ export function getAllowedSubstationIdsForUser({
       .filter((substation) => isOwnedBySubstationAdmin(substation, ids))
       .map((substation) => toId(substation?.id))
       .filter(Boolean)
-    return Array.from(new Set([...fromMappings, ...ownedSubstations].filter(Boolean)))
+    // Business rule: substation admins can access only self-created/owned substations.
+    // Explicit user mappings are for substation users, not admin scope expansion.
+    return Array.from(new Set(ownedSubstations.filter(Boolean)))
   }
 
   return Array.from(new Set([ids.substationId, ...fromMappings].filter(Boolean)))
