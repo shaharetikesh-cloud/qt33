@@ -55,9 +55,6 @@ function isOwnedBySubstationAdmin(substation, ids) {
   ]
     .map(toId)
     .filter(Boolean)
-  if (ids.email) {
-    candidates.push(ids.email)
-  }
   return candidates.includes(ids.profileId) || candidates.includes(ids.authUserId) || candidates.includes(ids.email)
 }
 
