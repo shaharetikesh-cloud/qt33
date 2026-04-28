@@ -157,6 +157,8 @@ export function validateMaintenanceInput(form) {
     getDurationBetweenTimes(fromTime, toTime) !== null,
     'Maintenance time range valid hava. To time ha from time nantar hava.',
   )
+  ensure(text(form.feederId), 'Maintenance feeder select kara.')
+  ensure(text(form.maintenanceType), 'Maintenance type required aahe.')
   ensure(numeric(durationMinutes, NaN) >= 0, 'Maintenance duration valid hava.')
   ensure(text(form.workDetail), 'Work detail required aahe.')
 }

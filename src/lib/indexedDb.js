@@ -434,6 +434,62 @@ export async function idbRequeueFailedOutbox() {
   return changed
 }
 
+export async function idbRequeueOutboxByStatus(statuses = ['failed']) {
+  const statusSet = new Set((statuses || []).map((item) => String(item || '').trim()).filter(Boolean))
+  if (!statusSet.size) {
+    return 0
+  }
+  const now = Date.now()
+  const db = await openDb()
+  if (!db) {
+    const snapshot = await readPreferencesSnapshot()
+    let changed = 0
+    const next = (snapshot.outbox || []).map((row) => {
+      if (!statusSet.has(row.sync_status)) {
+        return row
+      }
+      changed += 1
+      return {
+        ...row,
+        sync_status: 'pending',
+        retry_count: 0,
+        next_retry_at: now,
+        last_error: '',
+      }
+    })
+    if (changed > 0) {
+      await writePreferencesSnapshot({
+        ...snapshot,
+        outbox: next,
+      })
+    }
+    return changed
+  }
+
+  const tx = db.transaction([OUTBOX_STORE], 'readwrite')
+  const store = tx.objectStore(OUTBOX_STORE)
+  const rows = await requestToPromise(store.getAll())
+  let changed = 0
+  for (const row of rows || []) {
+    if (!statusSet.has(row.sync_status)) {
+      continue
+    }
+    changed += 1
+    store.put({
+      ...row,
+      sync_status: 'pending',
+      retry_count: 0,
+      next_retry_at: now,
+      last_error: '',
+    })
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
+  return changed
+}
+
 export async function idbUpdateOutboxStatus(queueId, status, patch = {}) {
   const db = await openDb()
   if (!db) {
@@ -474,10 +530,11 @@ export async function idbGetSyncCounts() {
       (acc, row) => {
         if (row.sync_status === 'pending') acc.pending += 1
         if (row.sync_status === 'failed') acc.failed += 1
+        if (row.sync_status === 'conflict') acc.conflicts += 1
         if (row.sync_status === 'synced') acc.synced += 1
         return acc
       },
-      { pending: 0, failed: 0, synced: 0 },
+      { pending: 0, failed: 0, conflicts: 0, synced: 0 },
     )
   }
   const tx = db.transaction([OUTBOX_STORE], 'readonly')
@@ -487,10 +544,11 @@ export async function idbGetSyncCounts() {
     (acc, row) => {
       if (row.sync_status === 'pending') acc.pending += 1
       if (row.sync_status === 'failed') acc.failed += 1
+      if (row.sync_status === 'conflict') acc.conflicts += 1
       if (row.sync_status === 'synced') acc.synced += 1
       return acc
     },
-    { pending: 0, failed: 0, synced: 0 },
+    { pending: 0, failed: 0, conflicts: 0, synced: 0 },
   )
 }
 
@@ -507,6 +565,66 @@ export async function idbDeleteOutboxItem(queueId) {
   await runTransaction([OUTBOX_STORE], 'readwrite', (tx) => {
     tx.objectStore(OUTBOX_STORE).delete(queueId)
   })
+}
+
+export async function idbListOutbox(limit = 400) {
+  const db = await openDb()
+  if (!db) {
+    const snapshot = await readPreferencesSnapshot()
+    return [...(snapshot.outbox || [])]
+      .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))
+      .slice(0, limit)
+  }
+  const tx = db.transaction([OUTBOX_STORE], 'readonly')
+  const rows = await requestToPromise(tx.objectStore(OUTBOX_STORE).getAll())
+  return (rows || [])
+    .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))
+    .slice(0, limit)
+}
+
+export async function idbCleanupSyncedOutbox(maxAgeMs = 24 * 60 * 60 * 1000) {
+  const now = Date.now()
+  const db = await openDb()
+  if (!db) {
+    const snapshot = await readPreferencesSnapshot()
+    const next = (snapshot.outbox || []).filter((row) => {
+      if (row.sync_status !== 'synced') {
+        return true
+      }
+      const syncedAt = Date.parse(String(row.synced_at || row.updated_at || ''))
+      if (!Number.isFinite(syncedAt)) {
+        return false
+      }
+      return now - syncedAt <= maxAgeMs
+    })
+    const removed = (snapshot.outbox || []).length - next.length
+    if (removed > 0) {
+      await writePreferencesSnapshot({
+        ...snapshot,
+        outbox: next,
+      })
+    }
+    return removed
+  }
+  const tx = db.transaction([OUTBOX_STORE], 'readwrite')
+  const store = tx.objectStore(OUTBOX_STORE)
+  const rows = await requestToPromise(store.getAll())
+  let removed = 0
+  for (const row of rows || []) {
+    if (row.sync_status !== 'synced') {
+      continue
+    }
+    const syncedAt = Date.parse(String(row.synced_at || row.updated_at || ''))
+    if (!Number.isFinite(syncedAt) || now - syncedAt > maxAgeMs) {
+      store.delete(row.queue_id)
+      removed += 1
+    }
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
+  return removed
 }
 
 export async function idbGetMeta(key, fallback = null) {

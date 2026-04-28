@@ -37,6 +37,8 @@ import {
 } from './substationAccess'
 
 const MASTER_COLLECTION_KEYS = ['divisions', 'feeders', 'batterySets', 'transformers']
+const recentWriteFingerprintByScope = new Map()
+const DUPLICATE_WRITE_WINDOW_MS = 1500
 
 async function getAuthToken() {
   const user = firebaseAuth?.currentUser
@@ -1136,9 +1138,40 @@ function normalizeRecord(data) {
   }
 }
 
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).sort()
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+function shouldSuppressDuplicateScopeWrite(scope, data, existing) {
+  const fingerprint = `${scope}:${data?.id || ''}:${stableStringify(data)}`
+  const now = Date.now()
+  const previous = recentWriteFingerprintByScope.get(scope)
+  recentWriteFingerprintByScope.set(scope, { fingerprint, at: now })
+  if (!existing || !previous) {
+    return false
+  }
+  return previous.fingerprint === fingerprint && now - previous.at < DUPLICATE_WRITE_WINDOW_MS
+}
+
 async function localSaveByScope(scope, data) {
   const existingRows = await idbListRecords(scope)
   const existing = existingRows.find((item) => item.id === (data.id || ''))
+  if (shouldSuppressDuplicateScopeWrite(scope, data, existing)) {
+    return {
+      ...data,
+      id: data.id,
+      updatedAt: existing?.updated_at || new Date().toISOString(),
+      updated_at: existing?.updated_at || new Date().toISOString(),
+      duplicateSuppressed: true,
+    }
+  }
   const record = normalizeRecord({
     ...data,
     entity_type: scope,

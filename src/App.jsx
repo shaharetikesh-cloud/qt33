@@ -1,7 +1,8 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { startRouteLoading, stopRouteLoading, subscribePageLoading } from './lib/pageLoading'
 
 function AdminOnlyPage({ children }) {
   const { isMainAdmin } = useAuth()
@@ -34,6 +35,7 @@ function ModulePage({ moduleKey, children }) {
 }
 
 const ArchitecturePage = lazy(() => import('./pages/ArchitecturePage'))
+const AssetHistoryAccountPage = lazy(() => import('./pages/AssetHistoryAccountPage'))
 const AuditPage = lazy(() => import('./pages/AuditPage'))
 const BatteryPage = lazy(() => import('./pages/BatteryPage'))
 const ChargeHandoverPage = lazy(() => import('./pages/ChargeHandoverPage'))
@@ -41,6 +43,7 @@ const DailyLogPage = lazy(() => import('./pages/DailyLogPage'))
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage'))
 const FeedbackPage = lazy(() => import('./pages/FeedbackPage'))
 const FaultsPage = lazy(() => import('./pages/FaultsPage'))
+const FeederHistoryAccountPage = lazy(() => import('./pages/FeederHistoryAccountPage'))
 const HistoryRegisterPage = lazy(() => import('./pages/HistoryRegisterPage'))
 const HomePage = lazy(() => import('./pages/HomePage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -51,6 +54,7 @@ const NoticeBoardPage = lazy(() => import('./pages/NoticeBoardPage'))
 const ReportCenterPage = lazy(() => import('./pages/ReportCenterPage'))
 const SessionPage = lazy(() => import('./pages/SessionPage'))
 const SubstationsPage = lazy(() => import('./pages/SubstationsPage'))
+const SyncMonitorPage = lazy(() => import('./pages/SyncMonitorPage'))
 const UsersPage = lazy(() => import('./pages/UsersPage'))
 
 function LoadingScreen() {
@@ -110,10 +114,51 @@ function WorkspaceIndexPage() {
   return <HomePage />
 }
 
+function GlobalLoadingLayer() {
+  const location = useLocation()
+  const routeKey = useMemo(
+    () => `${location.pathname}|${location.search}|${location.hash}`,
+    [location.hash, location.pathname, location.search],
+  )
+  const [loadingState, setLoadingState] = useState({
+    isActive: false,
+    navPendingCount: 0,
+    requestPendingCount: 0,
+    activeSinceMs: 0,
+    token: 0,
+  })
+
+  useEffect(() => {
+    return subscribePageLoading((state) => setLoadingState(state))
+  }, [])
+
+  useEffect(() => {
+    startRouteLoading()
+    const stopTimer = window.setTimeout(() => {
+      stopRouteLoading()
+    }, 1200)
+    return () => {
+      window.clearTimeout(stopTimer)
+    }
+  }, [routeKey])
+
+  if (!loadingState.isActive) {
+    return null
+  }
+
+  return (
+    <div className="global-loading-simple" role="status" aria-live="polite">
+      <div className="global-loading-spinner" aria-hidden="true" />
+      <span>Loading page, please wait...</span>
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <HashRouter>
+        <GlobalLoadingLayer />
         <Routes>
           <Route path="/login" element={<PublicRoute />} />
           <Route path="/" element={<ProtectedRoute />}>
@@ -191,6 +236,22 @@ export default function App() {
               }
             />
             <Route
+              path="feeder-history-account"
+              element={
+                <ModulePage moduleKey="history_register">
+                  <FeederHistoryAccountPage />
+                </ModulePage>
+              }
+            />
+            <Route
+              path="asset-history-account"
+              element={
+                <ModulePage moduleKey="history_register">
+                  <AssetHistoryAccountPage />
+                </ModulePage>
+              }
+            />
+            <Route
               path="report-center"
               element={
                 <ModulePage moduleKey="reports">
@@ -231,6 +292,14 @@ export default function App() {
               }
             />
             <Route path="session" element={<SessionPage />} />
+            <Route
+              path="sync-monitor"
+              element={
+                <AdminOnlyPage>
+                  <SyncMonitorPage />
+                </AdminOnlyPage>
+              }
+            />
             <Route
               path="architecture"
               element={

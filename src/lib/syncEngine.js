@@ -1,8 +1,10 @@
 import {
-  idbDeleteOutboxItem,
+  idbCleanupSyncedOutbox,
   idbGetMeta,
   idbRequeueFailedOutbox,
+  idbRequeueOutboxByStatus,
   idbGetSyncCounts,
+  idbListOutbox,
   idbListPendingOutbox,
   idbPutRecord,
   idbSetMeta,
@@ -14,6 +16,12 @@ const listeners = new Set()
 let syncInFlight = false
 let syncTimer = null
 let cloudSyncAvailable = null
+let realtimeChannels = []
+let realtimeFlushTimer = null
+const realtimeChangedScopes = new Set()
+const REALTIME_FLUSH_DEBOUNCE_MS = 450
+const REALTIME_BATCH_LIMIT = 12
+const SYNCED_OUTBOX_RETENTION_MS = 24 * 60 * 60 * 1000
 
 const syncState = {
   online: typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -27,6 +35,10 @@ const syncState = {
   runProcessed: 0,
   runPulled: 0,
   runPushed: 0,
+  health: 'healthy',
+  realtimeConnected: false,
+  lastError: '',
+  lastConflictAt: '',
 }
 
 function normalizeSyncCursor(cursorValue) {
@@ -98,6 +110,8 @@ async function refreshCounters() {
   syncState.pending = counts.pending
   syncState.failed = counts.failed
   syncState.synced = counts.synced
+  syncState.conflicts = counts.conflicts || 0
+  syncState.health = syncState.failed > 0 ? 'degraded' : syncState.pending > 0 ? 'pending' : 'healthy'
   emitSyncState()
 }
 
@@ -152,8 +166,8 @@ async function applyUpsert(operation) {
 
   const mergeResult = await detectAndMergeConflict(existing, operation)
   if (mergeResult.conflict) {
-    syncState.conflicts += 1
-    await idbUpdateOutboxStatus(operation.queue_id, 'failed', {
+    syncState.lastConflictAt = new Date().toISOString()
+    await idbUpdateOutboxStatus(operation.queue_id, 'conflict', {
       retry_count: operation.retry_count || 0,
       last_error: 'Conflict detected: newer server write exists on overlapping fields.',
       next_retry_at: Date.now() + 5 * 60 * 1000,
@@ -255,6 +269,9 @@ export async function triggerSync() {
     emitSyncState()
     for (const operation of operations) {
       try {
+        await idbUpdateOutboxStatus(operation.queue_id, 'syncing', {
+          sync_attempted_at: new Date().toISOString(),
+        })
         if (operation.operation_type === 'delete') {
           await applyDelete(operation)
           syncState.runPushed += 1
@@ -279,7 +296,11 @@ export async function triggerSync() {
           })
           syncState.runPushed += 1
         }
-        await idbDeleteOutboxItem(operation.queue_id)
+        await idbUpdateOutboxStatus(operation.queue_id, 'synced', {
+          synced_at: new Date().toISOString(),
+          last_error: '',
+          next_retry_at: Date.now(),
+        })
       } catch (error) {
         if (isMissingErpRecordsError(error)) {
           cloudSyncAvailable = false
@@ -296,6 +317,7 @@ export async function triggerSync() {
             last_error: error instanceof Error ? error.message : 'Sync failed',
           },
         )
+        syncState.lastError = error instanceof Error ? error.message : 'Sync failed'
         if (isAuthorizationSyncError(error)) {
           // Avoid hammering identical unauthorized writes for entire queue.
           break
@@ -309,6 +331,7 @@ export async function triggerSync() {
     const pulledCount = await pullServerUpdatesIncremental()
     syncState.runPulled = pulledCount
     syncState.lastSyncAt = new Date().toISOString()
+    await idbCleanupSyncedOutbox(SYNCED_OUTBOX_RETENTION_MS)
   } finally {
     syncInFlight = false
     syncState.syncing = false
@@ -399,6 +422,30 @@ export async function runManualSyncNow() {
   return { ...syncState }
 }
 
+export async function runForceSyncNow() {
+  await idbRequeueOutboxByStatus(['failed', 'conflict'])
+  await triggerSync()
+  return { ...syncState }
+}
+
+export async function getSyncDiagnostics(limit = 250) {
+  const [counts, outboxRows] = await Promise.all([idbGetSyncCounts(), idbListOutbox(limit)])
+  return {
+    counts,
+    outboxRows,
+    state: { ...syncState },
+  }
+}
+
+export async function retryOutboxStatuses(statuses = ['failed', 'conflict']) {
+  const changed = await idbRequeueOutboxByStatus(statuses)
+  if (changed > 0) {
+    scheduleSync(80)
+  }
+  await refreshCounters()
+  return changed
+}
+
 export async function syncScope(scope) {
   if (!supabase || !syncState.online) {
     return
@@ -452,6 +499,98 @@ export function subscribeSyncState(listener) {
   return () => listeners.delete(listener)
 }
 
+function clearRealtimeChannels() {
+  for (const channel of realtimeChannels) {
+    try {
+      supabase?.removeChannel(channel)
+    } catch {
+      // best effort
+    }
+  }
+  realtimeChannels = []
+  syncState.realtimeConnected = false
+}
+
+function scheduleRealtimeFlush() {
+  if (realtimeFlushTimer) {
+    clearTimeout(realtimeFlushTimer)
+  }
+  realtimeFlushTimer = setTimeout(() => {
+    realtimeFlushTimer = null
+    const scopes = [...realtimeChangedScopes]
+    realtimeChangedScopes.clear()
+    if (!scopes.length) {
+      return
+    }
+    void (async () => {
+      const limited = scopes.slice(0, REALTIME_BATCH_LIMIT)
+      for (const scope of limited) {
+        await syncScope(scope)
+      }
+      if (scopes.length > REALTIME_BATCH_LIMIT) {
+        scheduleSync(120)
+      } else {
+        emitSyncState()
+      }
+    })()
+  }, REALTIME_FLUSH_DEBOUNCE_MS)
+}
+
+function onRealtimeErpRecord(payload) {
+  const nextScope =
+    payload?.new?.scope ||
+    payload?.old?.scope ||
+    ''
+  if (!nextScope) {
+    return
+  }
+  realtimeChangedScopes.add(nextScope)
+  scheduleRealtimeFlush()
+}
+
+export function configureRealtimeSync({ profile, allowedSubstationIds = [], isMainAdmin = false } = {}) {
+  if (!supabase || !profile) {
+    clearRealtimeChannels()
+    emitSyncState()
+    return
+  }
+  clearRealtimeChannels()
+  const channelSpecs = []
+  if (isMainAdmin) {
+    channelSpecs.push({ name: 'erp_records_all', filter: null })
+  } else {
+    for (const substationId of allowedSubstationIds || []) {
+      if (!substationId) continue
+      channelSpecs.push({
+        name: `erp_records_substation_${substationId}`,
+        filter: `substation_id=eq.${substationId}`,
+      })
+    }
+  }
+  if (!channelSpecs.length) {
+    emitSyncState()
+    return
+  }
+  realtimeChannels = channelSpecs.map((spec) => {
+    const channel = supabase.channel(spec.name)
+    channel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'erp_records',
+        ...(spec.filter ? { filter: spec.filter } : {}),
+      },
+      onRealtimeErpRecord,
+    )
+    channel.subscribe((status) => {
+      syncState.realtimeConnected = status === 'SUBSCRIBED'
+      emitSyncState()
+    })
+    return channel
+  })
+}
+
 export async function initializeSyncEngine() {
   syncState.online = typeof navigator !== 'undefined' ? navigator.onLine : true
   await refreshCounters()
@@ -475,4 +614,7 @@ export async function initializeSyncEngine() {
   if (syncState.online) {
     scheduleSync(50)
   }
+  window.setInterval(() => {
+    void idbCleanupSyncedOutbox(SYNCED_OUTBOX_RETENTION_MS).catch(() => {})
+  }, 10 * 60 * 1000)
 }

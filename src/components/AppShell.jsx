@@ -18,7 +18,13 @@ import {
 } from '../lib/uiPreferences'
 import AppIcon from './ui/AppIcon'
 import Qt33OffsiteBrand from './ui/Qt33OffsiteBrand'
-import { runManualSyncNow, subscribeSyncState } from '../lib/syncEngine'
+import { startRouteLoading } from '../lib/pageLoading'
+import {
+  configureRealtimeSync,
+  runForceSyncNow,
+  runManualSyncNow,
+  subscribeSyncState,
+} from '../lib/syncEngine'
 
 const defaultGroupState = Object.fromEntries(
   navigationGroups.map((group) => [group.key, true]),
@@ -136,9 +142,12 @@ export default function AppShell() {
     runProcessed: 0,
     runPulled: 0,
     runPushed: 0,
+    health: 'healthy',
+    realtimeConnected: false,
   })
   const [manualSyncBusy, setManualSyncBusy] = useState(false)
   const [manualSyncNote, setManualSyncNote] = useState('')
+  const [forceSyncBusy, setForceSyncBusy] = useState(false)
 
   const isCompactViewport = viewportWidth <= 1080
   const isPhoneViewport = viewportWidth <= 760
@@ -155,6 +164,12 @@ export default function AppShell() {
   const approvalLabel = isApproved ? 'Approved' : profile?.approval_status || 'Pending'
   const brandTitle = isPhoneViewport ? 'QT ERP' : 'QT - Unified Substation ERP'
   const brandSubtitle = 'Substation DLR & Reports'
+  const syncHealthLabel =
+    syncState.health === 'degraded'
+      ? 'Health: Degraded'
+      : syncState.health === 'pending'
+        ? 'Health: Pending'
+        : 'Health: Live'
 
   const workspaceRouteKey = useMemo(
     () => getWorkspaceRouteKey(location.pathname),
@@ -225,9 +240,20 @@ export default function AppShell() {
         runProcessed: state.runProcessed || 0,
         runPulled: state.runPulled || 0,
         runPushed: state.runPushed || 0,
+        health: state.health || 'healthy',
+        realtimeConnected: Boolean(state.realtimeConnected),
       })
     })
   }, [])
+
+  useEffect(() => {
+    const allowedSubstationIds = (substations || []).map((item) => item.id).filter(Boolean)
+    configureRealtimeSync({
+      profile,
+      allowedSubstationIds,
+      isMainAdmin,
+    })
+  }, [isMainAdmin, profile, substations])
 
   useEffect(() => {
     let syncDebounceTimer = null
@@ -287,6 +313,24 @@ export default function AppShell() {
       setManualSyncNote(error?.message || 'Manual sync failed.')
     } finally {
       setManualSyncBusy(false)
+    }
+  }
+
+  async function handleForceSync() {
+    if (forceSyncBusy) {
+      return
+    }
+    setForceSyncBusy(true)
+    setManualSyncNote('')
+    try {
+      const summary = await runForceSyncNow()
+      setManualSyncNote(
+        `Force sync done: ${summary.runProcessed || 0}/${summary.runTotal || 0}, pulled ${summary.runPulled || 0}.`,
+      )
+    } catch (error) {
+      setManualSyncNote(error?.message || 'Force sync failed.')
+    } finally {
+      setForceSyncBusy(false)
     }
   }
 
@@ -471,6 +515,57 @@ export default function AppShell() {
           <span className="gov-strip-green" />
         </div>
 
+        {!isCompactViewport ? (
+          <div className="workspace-header-floating-controls">
+            <button
+              type="button"
+              className={[
+                'workspace-expand-button',
+                'workspace-expand-button--floating',
+                isWorkspaceExpanded ? 'workspace-expand-button-active' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={handleToggleWorkspaceExpanded}
+            >
+              <AppIcon name={isWorkspaceExpanded ? 'compress' : 'expand'} size={16} />
+              <span>{isWorkspaceExpanded ? 'Exit Workspace' : 'Expand Workspace'}</span>
+            </button>
+            <div className="workspace-sync-floating-panel">
+              <span className={syncState.online ? '' : 'text-danger'}>
+                {syncState.online
+                  ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
+                  : 'Offline'}
+              </span>
+              <span>{`${syncHealthLabel}${syncState.realtimeConnected ? ' | RT On' : ' | RT Off'}`}</span>
+              {syncState.syncing || syncState.runTotal ? (
+                <span>{`Run ${syncState.runProcessed || 0}/${syncState.runTotal || 0} | Pull ${syncState.runPulled || 0}`}</span>
+              ) : null}
+              {manualSyncNote ? <span>{manualSyncNote}</span> : null}
+              <button
+                type="button"
+                className="ghost-light-button small-button"
+                onClick={() => void handleManualSync()}
+                disabled={!syncState.online || manualSyncBusy || syncState.syncing}
+                title="Manual sync now"
+              >
+                {manualSyncBusy || syncState.syncing ? 'Syncing...' : 'Sync now'}
+              </button>
+              {isMainAdmin ? (
+                <button
+                  type="button"
+                  className="ghost-light-button small-button"
+                  onClick={() => void handleForceSync()}
+                  disabled={!syncState.online || forceSyncBusy || syncState.syncing}
+                  title="Force sync failed/conflict queue"
+                >
+                  {forceSyncBusy || syncState.syncing ? 'Running...' : 'Force sync'}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <div className="workspace-header-inner">
           <div className="workspace-header-left">
             <button
@@ -514,60 +609,6 @@ export default function AppShell() {
           </div>
 
           <div className="workspace-header-right">
-            {!isCompactViewport ? (
-              <button
-                type="button"
-                className={[
-                  'workspace-expand-button',
-                  isWorkspaceExpanded ? 'workspace-expand-button-active' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={handleToggleWorkspaceExpanded}
-              >
-                <AppIcon name={isWorkspaceExpanded ? 'compress' : 'expand'} size={16} />
-                <span>{isWorkspaceExpanded ? 'Exit Workspace' : 'Expand Workspace'}</span>
-              </button>
-            ) : null}
-
-            <label className="header-substation-picker" htmlFor="workspace-substation">
-              <span className={syncState.online ? '' : 'text-danger'}>
-                {syncState.online
-                  ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
-                  : 'Offline'}
-              </span>
-              {syncState.syncing || syncState.runTotal ? (
-                <span>{`Run ${syncState.runProcessed || 0}/${syncState.runTotal || 0} | Pull ${syncState.runPulled || 0}`}</span>
-              ) : null}
-              {manualSyncNote ? <span>{manualSyncNote}</span> : null}
-              <button
-                type="button"
-                className="ghost-light-button small-button"
-                onClick={() => void handleManualSync()}
-                disabled={!syncState.online || manualSyncBusy || syncState.syncing}
-                title="Manual sync now"
-              >
-                {manualSyncBusy || syncState.syncing ? 'Syncing...' : 'Sync now'}
-              </button>
-              <span>Substation</span>
-              <select
-                id="workspace-substation"
-                value={preferredSubstationId}
-                onChange={(event) => {
-                  const nextValue = event.target.value
-                  setPreferredSubstationIdState(nextValue)
-                  setPreferredSubstationId(nextValue)
-                }}
-              >
-                {isMainAdmin ? <option value="">All</option> : null}
-                {substations.map((substation) => (
-                  <option key={substation.id} value={substation.id}>
-                    {substation.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <div ref={dropdownRef} className="workspace-profile-shell">
               <button
                 type="button"
@@ -624,6 +665,62 @@ export default function AppShell() {
                 </div>
               ) : null}
             </div>
+
+            <label className="header-substation-picker" htmlFor="workspace-substation">
+              <span>Substation</span>
+              {isCompactViewport ? (
+                <span className={syncState.online ? '' : 'text-danger'}>
+                  {syncState.online
+                    ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
+                    : 'Offline'}
+                </span>
+              ) : null}
+              {isCompactViewport && (syncState.syncing || syncState.runTotal) ? (
+                <span>{`Run ${syncState.runProcessed || 0}/${syncState.runTotal || 0} | Pull ${syncState.runPulled || 0}`}</span>
+              ) : null}
+              {isCompactViewport && manualSyncNote ? <span>{manualSyncNote}</span> : null}
+              {isCompactViewport ? (
+                <span>{`${syncHealthLabel}${syncState.realtimeConnected ? ' | RT On' : ' | RT Off'}`}</span>
+              ) : null}
+              {isCompactViewport ? (
+                <button
+                  type="button"
+                  className="ghost-light-button small-button"
+                  onClick={() => void handleManualSync()}
+                  disabled={!syncState.online || manualSyncBusy || syncState.syncing}
+                  title="Manual sync now"
+                >
+                  {manualSyncBusy || syncState.syncing ? 'Syncing...' : 'Sync now'}
+                </button>
+              ) : null}
+              {isCompactViewport && isMainAdmin ? (
+                <button
+                  type="button"
+                  className="ghost-light-button small-button"
+                  onClick={() => void handleForceSync()}
+                  disabled={!syncState.online || forceSyncBusy || syncState.syncing}
+                  title="Force sync failed/conflict queue"
+                >
+                  {forceSyncBusy || syncState.syncing ? 'Running...' : 'Force sync'}
+                </button>
+              ) : null}
+              <select
+                id="workspace-substation"
+                value={preferredSubstationId}
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  setPreferredSubstationIdState(nextValue)
+                  setPreferredSubstationId(nextValue)
+                }}
+              >
+                {isMainAdmin ? <option value="">All</option> : null}
+                {substations.map((substation) => (
+                  <option key={substation.id} value={substation.id}>
+                    {substation.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       </header>
@@ -681,6 +778,7 @@ export default function AppShell() {
                       to={item.to}
                       title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => {
+                        startRouteLoading()
                         if (isCompactViewport) {
                           setSidebarCollapsedState(true)
                           setSidebarCollapsed(true)

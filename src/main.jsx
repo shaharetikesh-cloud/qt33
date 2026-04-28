@@ -7,11 +7,13 @@ import App from './App.jsx'
 import AppCrashBoundary from './components/AppCrashBoundary.jsx'
 import { migrateLegacyLocalScopesToIndexedDb } from './lib/legacyMigration'
 import { initializeNativeRuntime } from './lib/nativeRuntime'
+import { startNetworkLoading, stopNetworkLoading } from './lib/pageLoading'
 import { logRuntimeConfigurationStatus } from './lib/runtimeDiagnostics'
 import { initializeSyncEngine } from './lib/syncEngine'
 
 const rootElement = document.getElementById('root')
 let appRoot = null
+let fetchWrapped = false
 
 function mountIntoRoot(element) {
   if (!rootElement) {
@@ -92,6 +94,23 @@ function registerWebServiceWorker() {
   window.addEventListener('load', register, { once: true })
 }
 
+function setupGlobalFetchLoadingTracker() {
+  if (fetchWrapped || typeof window === 'undefined' || typeof window.fetch !== 'function') {
+    return
+  }
+
+  const originalFetch = window.fetch.bind(window)
+  window.fetch = async (...args) => {
+    startNetworkLoading()
+    try {
+      return await originalFetch(...args)
+    } finally {
+      stopNetworkLoading()
+    }
+  }
+  fetchWrapped = true
+}
+
 async function bootstrapApplication() {
   if (!rootElement) {
     throw new Error('Root element sapadla nahi.')
@@ -103,6 +122,7 @@ async function bootstrapApplication() {
     return
   }
 
+  setupGlobalFetchLoadingTracker()
   logRuntimeConfigurationStatus()
   await migrateLegacyLocalScopesToIndexedDb()
   await initializeSyncEngine()
