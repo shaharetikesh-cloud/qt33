@@ -2,7 +2,9 @@ import { useEffect, useState, startTransition } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   localCreateSubstation,
+  localDeleteSubstation,
   localListSubstations,
+  localUpdateSubstation,
 } from '../lib/localApi'
 import { isLocalSqlMode } from '../lib/runtimeConfig'
 
@@ -17,19 +19,38 @@ const emptyForm = {
 
 export default function SubstationsPage() {
   const {
-    isMainAdmin,
-    isSubstationAdmin,
-    canManageUsers,
     profile,
-    backendLabel,
-    refreshProfile,
   } = useAuth()
   const [substations, setSubstations] = useState([])
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+
+  async function reloadSubstations({ silent = false } = {}) {
+    if (!isLocalSqlMode) {
+      if (!silent) setLoading(false)
+      return
+    }
+    if (!silent) {
+      setLoading(true)
+    }
+    setError('')
+    try {
+      const data = await localListSubstations({ actor: profile })
+      startTransition(() => {
+        setSubstations(data)
+      })
+    } catch (loadError) {
+      setError(loadError.message)
+    } finally {
+      if (!silent) {
+        setLoading(false)
+      }
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -69,7 +90,22 @@ export default function SubstationsPage() {
     return () => {
       active = false
     }
-  }, [isSubstationAdmin, profile])
+  }, [profile])
+
+  useEffect(() => {
+    if (!isLocalSqlMode) {
+      return () => {}
+    }
+    const timerId = window.setInterval(() => {
+      void reloadSubstations({ silent: true })
+    }, 5000)
+    return () => window.clearInterval(timerId)
+  }, [profile])
+
+  function resetForm() {
+    setForm(emptyForm)
+    setEditingId('')
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -78,23 +114,46 @@ export default function SubstationsPage() {
     setStatus('')
 
     try {
-      const created = await localCreateSubstation(form, profile)
-      setForm(emptyForm)
-      setStatus('Substation create zala.')
-      if (isSubstationAdmin) {
-        await refreshProfile()
-      }
+      const saved = editingId
+        ? await localUpdateSubstation(editingId, form, profile)
+        : await localCreateSubstation(form, profile)
+      resetForm()
+      setStatus(editingId ? 'Substation update zala.' : 'Substation create zala.')
       startTransition(() => {
-        setSubstations((current) =>
-          [...current, created].sort((left, right) =>
-            left.name.localeCompare(right.name),
-          ),
-        )
+        setSubstations((current) => {
+          const next = editingId
+            ? current.map((item) => (item.id === saved.id ? { ...item, ...saved } : item))
+            : [...current, saved]
+          return next.sort((left, right) => left.name.localeCompare(right.name))
+        })
       })
+      await reloadSubstations({ silent: true })
     } catch (submitError) {
       setError(submitError.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete(substationId) {
+    const shouldDelete = window.confirm('Delete this substation?')
+    if (!shouldDelete) {
+      return
+    }
+    setError('')
+    setStatus('')
+    try {
+      await localDeleteSubstation(substationId, profile)
+      startTransition(() => {
+        setSubstations((current) => current.filter((item) => item.id !== substationId))
+      })
+      if (editingId === substationId) {
+        resetForm()
+      }
+      setStatus('Substation delete zala.')
+      await reloadSubstations({ silent: true })
+    } catch (deleteError) {
+      setError(deleteError.message)
     }
   }
 
@@ -103,8 +162,8 @@ export default function SubstationsPage() {
       <section className="content-card">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">{backendLabel}</p>
-            <h2>Substation Master</h2>
+            <p className="eyebrow">Local Setup</p>
+            <h2>Substation Setup</h2>
           </div>
         </div>
         <p className="muted-copy">
@@ -122,14 +181,13 @@ export default function SubstationsPage() {
         </section>
       ) : null}
 
-      {canManageUsers ? (
-        <section className="content-card">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Admin action</p>
-              <h2>Add substation</h2>
-            </div>
+      <section className="content-card">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Setup</p>
+            <h2>{editingId ? 'Edit substation' : 'Add substation'}</h2>
           </div>
+        </div>
 
           {status ? (
             <div className="callout success-callout">
@@ -143,105 +201,102 @@ export default function SubstationsPage() {
             </div>
           ) : null}
 
-          {isSubstationAdmin && (profile?.substation_id || profile?.substationId) ? (
-            <div className="callout info-callout">
-              <p>
-                Tumcha substation scope already set aahe. Additional substation create karaycha
-                asel tar Main Admin contact kara.
-              </p>
-            </div>
-          ) : (
-            <form className="form-stack" onSubmit={handleSubmit}>
-              <div className="details-grid">
-                <div>
-                  <label htmlFor="substation-code">Code</label>
-                  <input
-                    id="substation-code"
-                    value={form.code}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        code: event.target.value,
-                      }))
-                    }
-                    placeholder="e.g. 33KV-SELU"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="substation-name">Substation name</label>
-                  <input
-                    id="substation-name"
-                    value={form.name}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        name: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="substation-om">O&M</label>
-                  <input
-                    id="substation-om"
-                    value={form.omName}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        omName: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label htmlFor="substation-subdivision">Sub Division</label>
-                  <input
-                    id="substation-subdivision"
-                    value={form.subDivisionName}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        subDivisionName: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label htmlFor="substation-district">District</label>
-                  <input
-                    id="substation-district"
-                    value={form.district}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        district: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label htmlFor="substation-circle">Circle</label>
-                  <input
-                    id="substation-circle"
-                    value={form.circle}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        circle: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
+          <form className="form-stack" onSubmit={handleSubmit}>
+            <div className="details-grid">
+              <div>
+                <label htmlFor="substation-code">Code</label>
+                <input
+                  id="substation-code"
+                  value={form.code}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      code: event.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 33KV-SELU"
+                />
               </div>
+              <div>
+                <label htmlFor="substation-name">Substation name</label>
+                <input
+                  id="substation-name"
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="substation-om">O&M</label>
+                <input
+                  id="substation-om"
+                  value={form.omName}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      omName: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="substation-subdivision">Sub Division</label>
+                <input
+                  id="substation-subdivision"
+                  value={form.subDivisionName}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      subDivisionName: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="substation-district">District</label>
+                <input
+                  id="substation-district"
+                  value={form.district}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      district: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="substation-circle">Circle</label>
+                <input
+                  id="substation-circle"
+                  value={form.circle}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      circle: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
 
+            <div className="inline-actions">
               <button type="submit" className="primary-button" disabled={saving}>
-                {saving ? 'Saving...' : 'Add substation'}
+                {saving ? 'Saving...' : editingId ? 'Update substation' : 'Add substation'}
               </button>
-            </form>
-          )}
-        </section>
-      ) : null}
+              {editingId ? (
+                <button type="button" className="ghost-light-button" onClick={resetForm}>
+                  Cancel edit
+                </button>
+              ) : null}
+            </div>
+          </form>
+      </section>
 
       <section className="content-card">
         <div className="section-heading">
@@ -264,6 +319,7 @@ export default function SubstationsPage() {
                   <th>Sub Division</th>
                   <th>District</th>
                   <th>Circle</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -275,11 +331,39 @@ export default function SubstationsPage() {
                     <td>{item.subDivisionName || '-'}</td>
                     <td>{item.district || '-'}</td>
                     <td>{item.circle || '-'}</td>
+                    <td>
+                      <div className="inline-actions">
+                        <button
+                          type="button"
+                          className="ghost-light-button"
+                          onClick={() => {
+                            setEditingId(item.id)
+                            setForm({
+                              code: item.code || '',
+                              name: item.name || '',
+                              omName: item.omName || '',
+                              subDivisionName: item.subDivisionName || '',
+                              district: item.district || '',
+                              circle: item.circle || '',
+                            })
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-light-button"
+                          onClick={() => void handleDelete(item.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {!substations.length ? (
                   <tr>
-                    <td colSpan={6}>No substations yet.</td>
+                    <td colSpan={7}>No substations yet.</td>
                   </tr>
                 ) : null}
               </tbody>

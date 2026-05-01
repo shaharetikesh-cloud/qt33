@@ -65,6 +65,14 @@ function getRedirectUrl() {
   return `${window.location.origin}${window.location.pathname}`
 }
 
+function isBigintTypeMismatch(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    String(error?.code || '') === '22P02' &&
+    message.includes('invalid input syntax for type bigint')
+  )
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -110,11 +118,40 @@ export function AuthProvider({ children }) {
       return null
     }
 
+    const byFirebaseUid = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('firebase_uid', userId)
+      .maybeSingle()
+
+    if (byFirebaseUid.error) {
+      setProfile(null)
+      setProfileError(byFirebaseUid.error.message)
+      return null
+    }
+
+    if (byFirebaseUid.data) {
+      setProfile(byFirebaseUid.data)
+      setProfileError(null)
+      return byFirebaseUid.data
+    }
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('auth_user_id', userId)
       .maybeSingle()
+
+    if (isBigintTypeMismatch(error)) {
+      console.warn('[schema:type-mismatch]', {
+        context: 'profiles.auth_user_id lookup',
+        code: String(error?.code || ''),
+        message: String(error?.message || ''),
+      })
+      setProfile(null)
+      setProfileError('Profile schema mismatch detected. Run latest auth_user_id migration.')
+      return null
+    }
 
     if (error) {
       setProfile(null)

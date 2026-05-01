@@ -572,7 +572,7 @@ export async function runManualSyncNow() {
 }
 
 export async function runForceSyncNow() {
-  await idbRequeueOutboxByStatus(['failed', 'conflict'])
+  await idbRequeueOutboxByStatus(['failed', 'conflict', 'auth_error'])
   await triggerSync()
   return { ...syncState }
 }
@@ -586,7 +586,7 @@ export async function getSyncDiagnostics(limit = 250) {
   }
 }
 
-export async function retryOutboxStatuses(statuses = ['failed', 'conflict']) {
+export async function retryOutboxStatuses(statuses = ['failed', 'conflict', 'auth_error']) {
   const changed = await idbRequeueOutboxByStatus(statuses)
   if (changed > 0) {
     scheduleSync(80)

@@ -74,21 +74,43 @@ export async function verifyFirebaseTokenFromRequest(request: Request) {
 
 export async function loadActorProfile(uid: string) {
   const admin = getAdminClient()
-  const { data, error } = await admin
+  const byFirebase = await admin
     .from('profiles')
     .select('id, role, substation_id, firebase_uid, auth_user_id')
-    .or(`firebase_uid.eq.${uid},auth_user_id.eq.${uid}`)
+    .eq('firebase_uid', uid)
     .maybeSingle()
 
-  if (error) {
-    throw new Error(error.message)
+  if (byFirebase.error) {
+    throw new Error(byFirebase.error.message)
   }
 
-  if (!data) {
+  if (byFirebase.data) {
+    return byFirebase.data as ActorProfile
+  }
+
+  const byAuthUser = await admin
+    .from('profiles')
+    .select('id, role, substation_id, firebase_uid, auth_user_id')
+    .eq('auth_user_id', uid)
+    .maybeSingle()
+
+  if (byAuthUser.error) {
+    const message = String(byAuthUser.error.message || '')
+    if (
+      String(byAuthUser.error.code || '') === '22P02' &&
+      message.toLowerCase().includes('invalid input syntax for type bigint')
+    ) {
+      // Legacy schema mismatch: auth_user_id is numeric in some environments.
+      throw new Error('profiles.auth_user_id type mismatch. Run auth_user_id text migration.')
+    }
+    throw new Error(message)
+  }
+
+  if (!byAuthUser.data) {
     throw new Error('Actor profile missing.')
   }
 
-  return data as ActorProfile
+  return byAuthUser.data as ActorProfile
 }
 
 export function assertActorCanManageUsers(actor: ActorProfile) {

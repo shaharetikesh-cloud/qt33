@@ -50,6 +50,55 @@ function isAdminFunctionsEnabled() {
   return String(import.meta.env.VITE_SUPABASE_ADMIN_FUNCTIONS || '').toLowerCase() === 'true'
 }
 
+function isBigintTypeMismatch(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    String(error?.code || '') === '22P02' &&
+    message.includes('invalid input syntax for type bigint')
+  )
+}
+
+function logColumnTypeMismatch(context, error, extra = {}) {
+  console.warn('[schema:type-mismatch]', {
+    context,
+    code: String(error?.code || ''),
+    message: String(error?.message || ''),
+    ...extra,
+  })
+}
+
+function isNumericId(value) {
+  return /^\d+$/.test(String(value || '').trim())
+}
+
+function logWritePayload(table, operation, payload, watchedFields = []) {
+  const entries = Object.entries(payload || {}).map(([field, value]) => ({
+    field,
+    value,
+    typeof: typeof value,
+  }))
+  const filteredEntries = watchedFields.length
+    ? entries.filter((item) => watchedFields.includes(item.field))
+    : entries
+  console.info('[db-write-payload]', {
+    table,
+    operation,
+    fields: filteredEntries,
+  })
+}
+
+function assertNumericSubstationIdOrThrow(value, context) {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return
+  }
+  if (!isNumericId(normalized)) {
+    throw new Error(
+      `${context}: profiles.substation_id must be numeric bigint. Received "${normalized}".`,
+    )
+  }
+}
+
 async function invokeAdminFunction(name, payload) {
   if (!supabase) {
     throw new Error('Supabase not configured.')
@@ -63,12 +112,30 @@ async function invokeAdminFunction(name, payload) {
   return data || {}
 }
 
-function getProfileByFirebaseUid(uid) {
-  return supabase
+async function getProfileByFirebaseUid(uid) {
+  const byFirebase = await supabase
     .from('profiles')
     .select('*')
-    .or(`firebase_uid.eq.${uid},auth_user_id.eq.${uid}`)
+    .eq('firebase_uid', uid)
     .maybeSingle()
+  if (byFirebase.error) {
+    return byFirebase
+  }
+  if (byFirebase.data) {
+    return byFirebase
+  }
+  const byAuthUser = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('auth_user_id', uid)
+    .maybeSingle()
+  if (isBigintTypeMismatch(byAuthUser.error)) {
+    logColumnTypeMismatch('profiles.auth_user_id lookup', byAuthUser.error, {
+      lookup: 'auth_user_id',
+    })
+    return { data: null, error: null }
+  }
+  return byAuthUser
 }
 
 function normalizeRole(role) {
@@ -143,8 +210,37 @@ async function getProfileByEmail(email) {
   return supabase
     .from('profiles')
     .select('*')
-    .ilike('email', email)
+    .eq('email', String(email || '').trim().toLowerCase())
     .maybeSingle()
+}
+
+async function updateMustChangePasswordByUid(uid) {
+  const nextPayload = { must_change_password: false }
+  const byFirebase = await supabase
+    .from('profiles')
+    .update(nextPayload)
+    .eq('firebase_uid', uid)
+    .select('id')
+  if (byFirebase.error) {
+    throw byFirebase.error
+  }
+  if ((byFirebase.data || []).length > 0) {
+    return
+  }
+  const byAuthUser = await supabase
+    .from('profiles')
+    .update(nextPayload)
+    .eq('auth_user_id', uid)
+    .select('id')
+  if (isBigintTypeMismatch(byAuthUser.error)) {
+    logColumnTypeMismatch('profiles.auth_user_id update', byAuthUser.error, {
+      operation: 'update must_change_password',
+    })
+    return
+  }
+  if (byAuthUser.error) {
+    throw byAuthUser.error
+  }
 }
 
 function getFallbackFullName(user) {
@@ -188,12 +284,27 @@ async function ensureProfileForFirebaseUser(user, options = {}) {
         role: emailProfile.role || role,
         is_active: emailProfile.is_active ?? isActive,
       }
-      const { data: updatedByEmail, error: updateError } = await supabase
+      let { data: updatedByEmail, error: updateError } = await supabase
         .from('profiles')
         .update(patch)
         .eq('id', emailProfile.id)
         .select('*')
         .single()
+      if (isBigintTypeMismatch(updateError)) {
+        logColumnTypeMismatch('profiles.update(auth_user_id)', updateError, {
+          profileId: emailProfile.id,
+        })
+        const fallbackPatch = { ...patch }
+        delete fallbackPatch.auth_user_id
+        const fallback = await supabase
+          .from('profiles')
+          .update(fallbackPatch)
+          .eq('id', emailProfile.id)
+          .select('*')
+          .single()
+        updatedByEmail = fallback.data
+        updateError = fallback.error
+      }
       if (updateError) {
         throw updateError
       }
@@ -209,11 +320,25 @@ async function ensureProfileForFirebaseUser(user, options = {}) {
     role,
     is_active: isActive,
   }
-  const { data: inserted, error: insertError } = await supabase
+  let { data: inserted, error: insertError } = await supabase
     .from('profiles')
     .insert(insertRow)
     .select('*')
     .single()
+  if (isBigintTypeMismatch(insertError)) {
+    logColumnTypeMismatch('profiles.insert(auth_user_id)', insertError, {
+      firebaseUid: user.uid,
+    })
+    const fallbackRow = { ...insertRow }
+    delete fallbackRow.auth_user_id
+    const fallback = await supabase
+      .from('profiles')
+      .insert(fallbackRow)
+      .select('*')
+      .single()
+    inserted = fallback.data
+    insertError = fallback.error
+  }
 
   if (insertError) {
     throw insertError
@@ -352,9 +477,9 @@ export async function localSignUp(payload) {
     updated_at: createdAtIso,
   }
 
-  const saveQuery = existingProfile?.id
-    ? supabase.from('profiles').update(row).eq('id', existingProfile.id).select('*').single()
-    : supabase
+  let profileSaveResult = existingProfile?.id
+    ? await supabase.from('profiles').update(row).eq('id', existingProfile.id).select('*').single()
+    : await supabase
       .from('profiles')
       .insert({
         ...row,
@@ -363,7 +488,25 @@ export async function localSignUp(payload) {
       .select('*')
       .single()
 
-  const { error: profileSaveError } = await saveQuery
+  if (isBigintTypeMismatch(profileSaveResult.error)) {
+    logColumnTypeMismatch('profiles.signup(auth_user_id)', profileSaveResult.error, {
+      email,
+    })
+    const fallbackRow = { ...row }
+    delete fallbackRow.auth_user_id
+    profileSaveResult = existingProfile?.id
+      ? await supabase.from('profiles').update(fallbackRow).eq('id', existingProfile.id).select('*').single()
+      : await supabase
+        .from('profiles')
+        .insert({
+          ...fallbackRow,
+          created_at: createdAtIso,
+        })
+        .select('*')
+        .single()
+  }
+
+  const profileSaveError = profileSaveResult.error
 
   if (profileSaveError) {
     await signOut(firebaseAuth)
@@ -395,10 +538,7 @@ export async function localUpdatePassword(newPassword) {
   if (!user) throw new Error('Session expired.')
   await updatePassword(user, newPassword)
   if (supabase && user.uid) {
-    await supabase
-      .from('profiles')
-      .update({ must_change_password: false })
-      .or(`firebase_uid.eq.${user.uid},auth_user_id.eq.${user.uid}`)
+    await updateMustChangePasswordByUid(user.uid)
   }
   return { message: 'Password updated.' }
 }
@@ -555,7 +695,26 @@ export async function localCreateUser(data, actor = null) {
     created_by_profile_id: actor?.id || null,
     parent_admin_id: normalizeAccessRole(actor?.role) === 'substation_admin' ? actor?.id || null : null,
   }
-  const { data: saved, error } = await supabase.from('profiles').insert(profileRow).select('*').single()
+  assertNumericSubstationIdOrThrow(profileRow.substation_id, 'create user flow')
+  logWritePayload('profiles', 'insert', profileRow, [
+    'auth_user_id',
+    'firebase_uid',
+    'substation_id',
+    'parent_admin_id',
+    'created_by_profile_id',
+  ])
+  let { data: saved, error } = await supabase.from('profiles').insert(profileRow).select('*').single()
+  if (isBigintTypeMismatch(error)) {
+    logColumnTypeMismatch('profiles.insert(admin-create-user)', error, {
+      actorId: actor?.id || '',
+      role,
+    })
+    const fallbackRow = { ...profileRow }
+    delete fallbackRow.auth_user_id
+    const fallback = await supabase.from('profiles').insert(fallbackRow).select('*').single()
+    saved = fallback.data
+    error = fallback.error
+  }
   if (error) throw error
   return {
     ...saved,
@@ -608,6 +767,16 @@ export async function localUpdateUser(userId, data, actor = null) {
     substation_id: data.substationId || null,
     module_permissions: { modules: { employees: { delete: Boolean(data.allowDelete) } } },
   }
+  assertNumericSubstationIdOrThrow(patch.substation_id, 'update user flow')
+  logWritePayload('profiles', 'update', {
+    id: userId,
+    ...patch,
+  }, [
+    'id',
+    'substation_id',
+    'role',
+    'is_active',
+  ])
   const { data: saved, error } = await supabase.from('profiles').update(patch).eq('id', userId).select('*').single()
   if (error) throw error
   return saved
@@ -704,10 +873,7 @@ export async function localChangePassword(currentPassword, newPassword) {
   await reauthenticateWithCredential(user, credential)
   await updatePassword(user, newPassword)
   if (supabase && user.uid) {
-    await supabase
-      .from('profiles')
-      .update({ must_change_password: false })
-      .or(`firebase_uid.eq.${user.uid},auth_user_id.eq.${user.uid}`)
+    await updateMustChangePasswordByUid(user.uid)
   }
   return { message: 'Password updated.' }
 }
@@ -768,6 +934,13 @@ export async function localListUserSubstationMappings() {
 }
 
 export async function localSaveUserSubstationMapping(data) {
+  logWritePayload('user_substation_mappings', 'upsert(local-scope)', data, [
+    'userId',
+    'user_id',
+    'substationId',
+    'substation_id',
+    'parent_admin_id',
+  ])
   return localSaveByScope('user-substation-mappings', data)
 }
 
@@ -895,28 +1068,73 @@ export async function localCreateSubstation(data, actor = null) {
         ? actorProfileId || actorAuthUserId || null
         : null,
   }
+  logWritePayload('substations', 'insert(local-scope)', payload, [
+    'id',
+    'parent_admin_id',
+    'created_by_profile_id',
+    'created_by_auth_user_id',
+    'created_by',
+  ])
   const savedRow = await localSaveByScope('substations', payload)
   const row = null
 
   const actorRole = normalizeAccessRole(actor?.role)
   const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
   const effectiveSubstationId = row?.id || savedRow?.id
+  const resolvedSubstationIdForProfile = isNumericId(row?.id)
+    ? String(row.id)
+    : isNumericId(savedRow?.substation_id)
+      ? String(savedRow.substation_id)
+      : ''
+
+  if (effectiveSubstationId && !resolvedSubstationIdForProfile) {
+    console.warn('[schema:type-mismatch]', {
+      context: 'substation-create-profile-link',
+      message:
+        'Substation saved with non-numeric local id; skipping profiles.substation_id update to avoid bigint cast failure.',
+      substationIdCandidate: String(effectiveSubstationId),
+      parent_admin_id: String(savedRow?.parent_admin_id || ''),
+      parent_admin_typeof: typeof savedRow?.parent_admin_id,
+    })
+  }
   if (actorRole === 'substation_admin' && !actorSubstationId && effectiveSubstationId) {
     const actorUserId = actorAuthUserId
     let updateResult = null
 
-    if (actorUserId) {
+    if (actorUserId && resolvedSubstationIdForProfile) {
+      assertNumericSubstationIdOrThrow(resolvedSubstationIdForProfile, 'substation create flow')
+      logWritePayload(
+        'profiles',
+        'update(substation_id by auth_user_id)',
+        {
+          auth_user_id: actorUserId,
+          substation_id: resolvedSubstationIdForProfile,
+          parent_admin_id: savedRow?.parent_admin_id || null,
+        },
+        ['auth_user_id', 'substation_id', 'parent_admin_id'],
+      )
       updateResult = await supabase
         .from('profiles')
-        .update({ substation_id: effectiveSubstationId })
+        .update({ substation_id: resolvedSubstationIdForProfile })
         .eq('auth_user_id', actorUserId)
         .select('id')
     }
 
-    if ((!updateResult?.data || !updateResult.data.length) && actorEmail) {
+    if ((!updateResult?.data || !updateResult.data.length) && actorEmail && resolvedSubstationIdForProfile) {
+      assertNumericSubstationIdOrThrow(resolvedSubstationIdForProfile, 'substation create flow')
+      logWritePayload(
+        'profiles',
+        'update(substation_id by email)',
+        {
+          email: actorEmail,
+          substation_id: resolvedSubstationIdForProfile,
+          parent_admin_id: savedRow?.parent_admin_id || null,
+        },
+        ['email', 'substation_id', 'parent_admin_id'],
+      )
       updateResult = await supabase
         .from('profiles')
-        .update({ substation_id: effectiveSubstationId })
+        .update({ substation_id: resolvedSubstationIdForProfile })
         .ilike('email', actorEmail)
         .select('id')
     }
@@ -955,6 +1173,65 @@ export async function localCreateSubstation(data, actor = null) {
   }
 
   return row || savedRow
+}
+
+export async function localUpdateSubstation(substationId, data, actor = null) {
+  const targetId = String(substationId || data?.id || '').trim()
+  if (!targetId) {
+    throw new Error('Substation id required aahe.')
+  }
+
+  const actorProfileId = String(actor?.id || actor?.profile_id || '').trim()
+  const actorAuthUserId = String(
+    actor?.auth_user_id ||
+      actor?.authUserId ||
+      actor?.firebase_uid ||
+      firebaseAuth?.currentUser?.uid ||
+      actor?.id ||
+      '',
+  ).trim()
+
+  const payload = {
+    ...data,
+    id: targetId,
+    updated_by: actorAuthUserId || actorProfileId || '',
+    updatedBy: actorAuthUserId || actorProfileId || '',
+  }
+  logWritePayload('substations', 'update(local-scope)', payload, [
+    'id',
+    'updated_by',
+    'updatedBy',
+    'parent_admin_id',
+  ])
+  return localSaveByScope('substations', payload)
+}
+
+export async function localDeleteSubstation(substationId, actor = null) {
+  const targetId = String(substationId || '').trim()
+  if (!targetId) {
+    throw new Error('Substation id required aahe.')
+  }
+  if (actor) {
+    const role = normalizeAccessRole(actor?.role)
+    if (role !== 'super_admin' && role !== 'substation_admin') {
+      throw new Error('Substation delete access denied.')
+    }
+    if (role !== 'super_admin') {
+      const substationsForAccess = await localListSubstations({ actor: null })
+      const mappingsForAccess = await localListUserSubstationMappings()
+      const hasAccess = canAccessSubstationForUser({
+        profile: actor,
+        substationId: targetId,
+        substations: substationsForAccess,
+        mappings: mappingsForAccess,
+      })
+      if (!hasAccess) {
+        throw new Error('Substation delete access denied for selected substation.')
+      }
+    }
+  }
+  await localDeleteByScope('substations', targetId)
+  return { ok: true }
 }
 
 export async function localListEmployees(filters = {}) {

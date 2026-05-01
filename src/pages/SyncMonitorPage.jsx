@@ -51,8 +51,8 @@ export default function SyncMonitorPage() {
         await runForceSyncNow()
         setNote('Force sync completed.')
       } else if (action === 'retry') {
-        const changed = await retryOutboxStatuses(['failed', 'conflict'])
-        setNote(`Retry queued: ${changed}`)
+        const changed = await retryOutboxStatuses(['failed', 'conflict', 'auth_error'])
+        setNote(`Retry queued (failed/conflict/auth): ${changed}`)
       }
       await refreshDiagnostics()
     } catch (error) {
@@ -108,7 +108,7 @@ export default function SyncMonitorPage() {
             onClick={() => void runAction('retry')}
             disabled={busy}
           >
-            Retry failed/conflict
+            Retry failed/conflict/auth
           </button>
           <button
             type="button"
