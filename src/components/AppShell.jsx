@@ -19,6 +19,7 @@ import {
 import AppIcon from './ui/AppIcon'
 import Qt33OffsiteBrand from './ui/Qt33OffsiteBrand'
 import { startRouteLoading } from '../lib/pageLoading'
+import { isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
 import {
   configureRealtimeSync,
   runForceSyncNow,
@@ -51,10 +52,33 @@ function canAccessNavigationItem(item, access) {
 }
 
 function getVisibleGroups(access) {
+  const offlineAllowedRoutes = new Set([
+    '/',
+    '/substations',
+    '/daily-log',
+    '/maintenance',
+    '/history-register',
+    '/feeder-history-account',
+    '/asset-history-account',
+    '/battery',
+    '/faults',
+    '/charge-handover',
+    '/employees',
+    '/report-center',
+    '/month-end-pack',
+    '/masters',
+    '/session',
+  ])
+
   return navigationGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canAccessNavigationItem(item, access)),
+      items: group.items.filter((item) => {
+        if (isOfflineLocalSingleUserProfile && !offlineAllowedRoutes.has(item.to)) {
+          return false
+        }
+        return canAccessNavigationItem(item, access)
+      }),
     }))
     .filter((group) => group.items.length)
 }
@@ -93,7 +117,6 @@ export default function AppShell() {
     signOut,
     authBusy,
     profileError,
-    backendLabel,
     roleLabel,
   } = useAuth()
 
@@ -136,6 +159,7 @@ export default function AppShell() {
     online: typeof navigator !== 'undefined' ? navigator.onLine : true,
     pending: 0,
     failed: 0,
+    authErrors: 0,
     syncing: false,
     conflicts: 0,
     runTotal: 0,
@@ -161,11 +185,13 @@ export default function AppShell() {
     isPhoneViewport && currentUserName.includes(' ')
       ? currentUserName.split(' ')[0]
       : currentUserName
-  const approvalLabel = isApproved ? 'Approved' : profile?.approval_status || 'Pending'
+  const approvalLabel = isApproved ? 'Ready' : profile?.approval_status || 'Pending'
   const brandTitle = isPhoneViewport ? 'QT ERP' : 'QT - Unified Substation ERP'
   const brandSubtitle = 'Substation DLR & Reports'
   const syncHealthLabel =
-    syncState.health === 'degraded'
+    syncState.health === 'auth_error'
+      ? 'Health: Auth Error'
+      : syncState.health === 'degraded'
       ? 'Health: Degraded'
       : syncState.health === 'pending'
         ? 'Health: Pending'
@@ -229,11 +255,15 @@ export default function AppShell() {
   }, [preferredSubstationId, profile])
 
   useEffect(() => {
+    if (isOfflineLocalSingleUserProfile) {
+      return () => {}
+    }
     return subscribeSyncState((state) => {
       setSyncState({
         online: state.online,
         pending: state.pending,
         failed: state.failed,
+        authErrors: state.authErrors || 0,
         syncing: state.syncing,
         conflicts: state.conflicts,
         runTotal: state.runTotal || 0,
@@ -247,6 +277,9 @@ export default function AppShell() {
   }, [])
 
   useEffect(() => {
+    if (isOfflineLocalSingleUserProfile) {
+      return () => {}
+    }
     const allowedSubstationIds = (substations || []).map((item) => item.id).filter(Boolean)
     configureRealtimeSync({
       profile,
@@ -256,6 +289,9 @@ export default function AppShell() {
   }, [isMainAdmin, profile, substations])
 
   useEffect(() => {
+    if (isOfflineLocalSingleUserProfile) {
+      return () => {}
+    }
     let syncDebounceTimer = null
     let periodicSyncTimer = null
 
@@ -503,19 +539,22 @@ export default function AppShell() {
         ref={headerRef}
         className={[
           'workspace-header',
+          isOfflineLocalSingleUserProfile ? 'workspace-header-offline' : '',
           isCompactViewport ? 'workspace-header-compact' : '',
           isPhoneViewport ? 'workspace-header-phone' : '',
         ]
           .filter(Boolean)
           .join(' ')}
       >
-        <div className="gov-tricolor-strip">
-          <span className="gov-strip-saffron" />
-          <span className="gov-strip-white" />
-          <span className="gov-strip-green" />
-        </div>
+        {!isOfflineLocalSingleUserProfile ? (
+          <div className="gov-tricolor-strip">
+            <span className="gov-strip-saffron" />
+            <span className="gov-strip-white" />
+            <span className="gov-strip-green" />
+          </div>
+        ) : null}
 
-        {!isCompactViewport ? (
+        {!isCompactViewport && !isOfflineLocalSingleUserProfile ? (
           <div className="workspace-header-floating-controls">
             <button
               type="button"
@@ -534,7 +573,7 @@ export default function AppShell() {
             <div className="workspace-sync-floating-panel">
               <span className={syncState.online ? '' : 'text-danger'}>
                 {syncState.online
-                  ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
+                  ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.authErrors ? ` / A${syncState.authErrors}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
                   : 'Offline'}
               </span>
               <span>{`${syncHealthLabel}${syncState.realtimeConnected ? ' | RT On' : ' | RT Off'}`}</span>
@@ -609,7 +648,8 @@ export default function AppShell() {
           </div>
 
           <div className="workspace-header-right">
-            <div ref={dropdownRef} className="workspace-profile-shell">
+            {!isOfflineLocalSingleUserProfile ? (
+              <div ref={dropdownRef} className="workspace-profile-shell">
               <button
                 type="button"
                 className="workspace-profile-button"
@@ -637,10 +677,6 @@ export default function AppShell() {
                       <strong>{roleLabel || 'Pending'}</strong>
                     </div>
                     <div>
-                      <span>Backend</span>
-                      <strong>{backendLabel}</strong>
-                    </div>
-                    <div>
                       <span>Status</span>
                       <strong>{approvalLabel}</strong>
                     </div>
@@ -664,14 +700,16 @@ export default function AppShell() {
                   </button>
                 </div>
               ) : null}
-            </div>
+              </div>
+            ) : null}
 
-            <label className="header-substation-picker" htmlFor="workspace-substation">
+            {!isOfflineLocalSingleUserProfile ? (
+              <label className="header-substation-picker" htmlFor="workspace-substation">
               <span>Substation</span>
               {isCompactViewport ? (
                 <span className={syncState.online ? '' : 'text-danger'}>
                   {syncState.online
-                    ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
+                    ? `${syncState.syncing ? 'Syncing' : 'Sync'} ${syncState.pending}${syncState.failed ? ` / F${syncState.failed}` : ''}${syncState.authErrors ? ` / A${syncState.authErrors}` : ''}${syncState.conflicts ? ` / C${syncState.conflicts}` : ''}`
                     : 'Offline'}
                 </span>
               ) : null}
@@ -720,7 +758,8 @@ export default function AppShell() {
                   </option>
                 ))}
               </select>
-            </label>
+              </label>
+            ) : null}
           </div>
         </div>
       </header>

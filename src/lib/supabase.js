@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { buildMissingEnvError, getMissingEnvKeys } from './envConfig'
+import { firebaseAuth } from './firebase'
+import { isOfflineLocalSingleUserProfile } from './runtimeConfig'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -11,20 +13,41 @@ export function setSupabaseAccessTokenProvider(provider) {
   accessTokenProvider = provider
 }
 
+export async function getSupabaseAccessToken({ forceRefresh = false } = {}) {
+  if (!accessTokenProvider) {
+    return ''
+  }
+  try {
+    return (await accessTokenProvider({ forceRefresh })) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function getSupabaseAuthDiagnostics() {
+  const user = firebaseAuth?.currentUser
+  return {
+    hasSession: Boolean(user),
+    userId: user?.uid || '',
+  }
+}
+
 export const supabaseConfigError =
   missingSupabaseEnv.length > 0
     ? buildMissingEnvError('supabase', 'Supabase')
     : null
 
 export const supabase =
-  !supabaseConfigError
+  !supabaseConfigError && !isOfflineLocalSingleUserProfile
     ? createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         fetch: async (url, options = {}) => {
-          const token = accessTokenProvider ? await accessTokenProvider() : ''
+          const token = await getSupabaseAccessToken()
           const headers = new Headers(options.headers || {})
-          // Keep Supabase's default Authorization/apikey behavior.
-          // Firebase token is passed in a custom header for optional server-side bridging.
+          // Keep Supabase apikey behavior and attach runtime auth when available.
+          if (token && !headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${token}`)
+          }
           if (token && !headers.has('x-firebase-auth')) {
             headers.set('x-firebase-auth', token)
           }

@@ -24,7 +24,11 @@ import {
   isReadOnlyRole,
   isSubstationAdminRole,
 } from '../lib/rbac'
-import { backendLabel, isLocalSqlMode } from '../lib/runtimeConfig'
+import {
+  backendLabel,
+  isLocalSqlMode,
+  isOfflineLocalSingleUserProfile,
+} from '../lib/runtimeConfig'
 import { supabase, supabaseConfigError } from '../lib/supabase'
 import { firebaseAuth } from '../lib/firebase'
 import { setSupabaseAccessTokenProvider } from '../lib/supabase'
@@ -32,6 +36,26 @@ import { getSubscriptionAccessState } from '../lib/subscription'
 import { onAuthStateChanged } from 'firebase/auth'
 
 const AuthContext = createContext(null)
+const OFFLINE_LOCAL_SINGLE_USER_SESSION = {
+  token: 'offline-local-single-user-session',
+  user: {
+    id: 'offline-local-single-user',
+    username: 'offline-admin',
+    email: 'offline@local.user',
+    role: 'super_admin',
+  },
+}
+const OFFLINE_LOCAL_SINGLE_USER_PROFILE = {
+  id: 'offline-local-single-user',
+  auth_user_id: 'offline-local-single-user',
+  username: 'offline-user',
+  email: 'offline@local.user',
+  full_name: 'Operator',
+  role: 'super_admin',
+  is_active: true,
+  approval_status: 'approved',
+  must_change_password: false,
+}
 
 function getRedirectUrl() {
   if (typeof window === 'undefined') {
@@ -143,15 +167,26 @@ export function AuthProvider({ children }) {
   }, [applyAuthPayload, isProfileLoginAllowed])
 
   useEffect(() => {
-    setSupabaseAccessTokenProvider(async () => {
+    setSupabaseAccessTokenProvider(async ({ forceRefresh = false } = {}) => {
       if (!firebaseAuth?.currentUser) {
         return ''
       }
-      return firebaseAuth.currentUser.getIdToken()
+      return firebaseAuth.currentUser.getIdToken(Boolean(forceRefresh))
     })
   }, [])
 
   useEffect(() => {
+    if (isOfflineLocalSingleUserProfile) {
+      applyAuthPayload({
+        session: OFFLINE_LOCAL_SINGLE_USER_SESSION,
+        profile: OFFLINE_LOCAL_SINGLE_USER_PROFILE,
+      })
+      setRecoveryMode(false)
+      setProfileError(null)
+      setLoading(false)
+      return () => {}
+    }
+
     let alive = true
 
     if (isLocalSqlMode) {
@@ -237,7 +272,31 @@ export function AuthProvider({ children }) {
     }
   }, [bootstrapLocalSession, syncSupabaseSessionState])
 
+  useEffect(() => {
+    if (!isOfflineLocalSingleUserProfile) {
+      return () => {}
+    }
+    const forceReadyTimer = window.setTimeout(() => {
+      setLoading(false)
+      setProfileError(null)
+      if (!session) {
+        applyAuthPayload({
+          session: OFFLINE_LOCAL_SINGLE_USER_SESSION,
+          profile: OFFLINE_LOCAL_SINGLE_USER_PROFILE,
+        })
+      }
+    }, 1800)
+    return () => window.clearTimeout(forceReadyTimer)
+  }, [applyAuthPayload, session])
+
   async function signIn({ identifier, username, email, password }) {
+    if (isOfflineLocalSingleUserProfile) {
+      return {
+        session: OFFLINE_LOCAL_SINGLE_USER_SESSION,
+        profile: OFFLINE_LOCAL_SINGLE_USER_PROFILE,
+      }
+    }
+
     setAuthBusy(true)
 
     try {
@@ -274,6 +333,10 @@ export function AuthProvider({ children }) {
   }
 
   async function signUp({ email, password, fullName, phone, requestedRole }) {
+    if (isOfflineLocalSingleUserProfile) {
+      throw new Error('Offline local single user profile madhye signup required nahi.')
+    }
+
     setAuthBusy(true)
 
     try {
@@ -338,6 +401,10 @@ export function AuthProvider({ children }) {
   }
 
   async function requestPasswordReset(email) {
+    if (isOfflineLocalSingleUserProfile) {
+      throw new Error('Offline local single user profile madhye password reset required nahi.')
+    }
+
     setAuthBusy(true)
 
     try {
@@ -366,6 +433,10 @@ export function AuthProvider({ children }) {
   }
 
   async function resendVerificationEmail(email) {
+    if (isOfflineLocalSingleUserProfile) {
+      throw new Error('Offline local single user profile madhye verification email flow नाही.')
+    }
+
     setAuthBusy(true)
     try {
       if (isLocalSqlMode) {
@@ -378,6 +449,10 @@ export function AuthProvider({ children }) {
   }
 
   async function updatePassword(newPassword) {
+    if (isOfflineLocalSingleUserProfile) {
+      throw new Error('Offline local single user profile madhye password update disabled aahe.')
+    }
+
     setAuthBusy(true)
 
     try {
@@ -407,6 +482,14 @@ export function AuthProvider({ children }) {
   }
 
   async function refreshProfile() {
+    if (isOfflineLocalSingleUserProfile) {
+      applyAuthPayload({
+        session: OFFLINE_LOCAL_SINGLE_USER_SESSION,
+        profile: OFFLINE_LOCAL_SINGLE_USER_PROFILE,
+      })
+      return OFFLINE_LOCAL_SINGLE_USER_PROFILE
+    }
+
     if (isLocalSqlMode) {
       const payload = await fetchLocalSession()
       applyAuthPayload(payload)
@@ -421,6 +504,14 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    if (isOfflineLocalSingleUserProfile) {
+      applyAuthPayload({
+        session: OFFLINE_LOCAL_SINGLE_USER_SESSION,
+        profile: OFFLINE_LOCAL_SINGLE_USER_PROFILE,
+      })
+      return
+    }
+
     setAuthBusy(true)
 
     try {
@@ -500,11 +591,11 @@ export function AuthProvider({ children }) {
   }, [])
 
   const role = profile?.role || ''
-  const isMainAdmin = isMainAdminRole(role)
+  const isMainAdmin = isOfflineLocalSingleUserProfile ? false : isMainAdminRole(role)
   const isSubstationAdmin = isSubstationAdminRole(role)
   const isAdmin = canManageUsersByRole(role)
   const canManageUsers = canManageUsersByRole(role)
-  const roleLabel = getRoleLabel(role)
+  const roleLabel = isOfflineLocalSingleUserProfile ? 'User' : getRoleLabel(role)
   const isReadOnlyUser = isReadOnlyRole(role)
 
   const value = {

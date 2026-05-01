@@ -530,11 +530,12 @@ export async function idbGetSyncCounts() {
       (acc, row) => {
         if (row.sync_status === 'pending') acc.pending += 1
         if (row.sync_status === 'failed') acc.failed += 1
+        if (row.sync_status === 'auth_error') acc.auth_errors += 1
         if (row.sync_status === 'conflict') acc.conflicts += 1
         if (row.sync_status === 'synced') acc.synced += 1
         return acc
       },
-      { pending: 0, failed: 0, conflicts: 0, synced: 0 },
+      { pending: 0, failed: 0, auth_errors: 0, conflicts: 0, synced: 0 },
     )
   }
   const tx = db.transaction([OUTBOX_STORE], 'readonly')
@@ -544,11 +545,12 @@ export async function idbGetSyncCounts() {
     (acc, row) => {
       if (row.sync_status === 'pending') acc.pending += 1
       if (row.sync_status === 'failed') acc.failed += 1
+      if (row.sync_status === 'auth_error') acc.auth_errors += 1
       if (row.sync_status === 'conflict') acc.conflicts += 1
       if (row.sync_status === 'synced') acc.synced += 1
       return acc
     },
-    { pending: 0, failed: 0, conflicts: 0, synced: 0 },
+    { pending: 0, failed: 0, auth_errors: 0, conflicts: 0, synced: 0 },
   )
 }
 

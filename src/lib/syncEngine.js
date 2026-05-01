@@ -10,7 +10,11 @@ import {
   idbSetMeta,
   idbUpdateOutboxStatus,
 } from './indexedDb'
-import { supabase } from './supabase'
+import {
+  getSupabaseAccessToken,
+  getSupabaseAuthDiagnostics,
+  supabase,
+} from './supabase'
 
 const listeners = new Set()
 let syncInFlight = false
@@ -27,6 +31,7 @@ const syncState = {
   online: typeof navigator !== 'undefined' ? navigator.onLine : true,
   pending: 0,
   failed: 0,
+  authErrors: 0,
   synced: 0,
   syncing: false,
   conflicts: 0,
@@ -75,6 +80,16 @@ function isAuthorizationSyncError(error) {
   return status === 401 || status === 403 || code === '42501'
 }
 
+async function canRunCloudSync() {
+  const auth = getSupabaseAuthDiagnostics()
+  const hasToken = Boolean(await getSupabaseAccessToken())
+  return {
+    ...auth,
+    hasToken,
+    ready: auth.hasSession && hasToken,
+  }
+}
+
 async function ensureCloudSyncAvailability() {
   if (!supabase) {
     return false
@@ -109,9 +124,16 @@ async function refreshCounters() {
   const counts = await idbGetSyncCounts()
   syncState.pending = counts.pending
   syncState.failed = counts.failed
+  syncState.authErrors = counts.auth_errors || 0
   syncState.synced = counts.synced
   syncState.conflicts = counts.conflicts || 0
-  syncState.health = syncState.failed > 0 ? 'degraded' : syncState.pending > 0 ? 'pending' : 'healthy'
+  syncState.health = syncState.authErrors > 0
+    ? 'auth_error'
+    : syncState.failed > 0
+      ? 'degraded'
+      : syncState.pending > 0
+        ? 'pending'
+        : 'healthy'
   emitSyncState()
 }
 
@@ -252,9 +274,24 @@ export async function triggerSync() {
   if (!supabase || syncInFlight || !syncState.online) {
     return
   }
+  const authStatus = await canRunCloudSync()
+  if (!authStatus.ready) {
+    await idbRequeueOutboxByStatus(['syncing'])
+    syncState.lastError = 'Login required for cloud sync.'
+    await refreshCounters()
+    emitSyncState()
+    console.info('[sync] paused-login-required', {
+      userId: authStatus.userId || '',
+      hasSession: authStatus.hasSession,
+      pending: syncState.pending,
+      lastError: syncState.lastError,
+    })
+    return
+  }
   if (!(await ensureCloudSyncAvailability())) {
     return
   }
+  await idbRequeueOutboxByStatus(['auth_error'])
 
   syncInFlight = true
   syncState.syncing = true
@@ -306,6 +343,56 @@ export async function triggerSync() {
           cloudSyncAvailable = false
           return
         }
+        if (isAuthorizationSyncError(error)) {
+          const refreshedToken = await getSupabaseAccessToken({ forceRefresh: true })
+          if (refreshedToken) {
+            try {
+              if (operation.operation_type === 'delete') {
+                await applyDelete(operation)
+                syncState.runPushed += 1
+              } else {
+                const retryResult = await applyUpsert(operation)
+                if (!retryResult.conflict) {
+                  await idbPutRecord(operation.entity_type || operation.scope, {
+                    id: operation.id,
+                    payload: operation.payload,
+                    sync_status: 'synced',
+                    updated_at: retryResult.serverRow?.updated_at || operation.updated_at,
+                    client_updated_at:
+                      retryResult.serverRow?.client_updated_at || operation.client_updated_at,
+                    updated_by: retryResult.serverRow?.updated_by || operation.updated_by,
+                    device_id: retryResult.serverRow?.device_id || operation.device_id,
+                    version: Number(retryResult.serverRow?.version || 1),
+                    deleted: false,
+                  })
+                  syncState.runPushed += 1
+                }
+              }
+              await idbUpdateOutboxStatus(operation.queue_id, 'synced', {
+                synced_at: new Date().toISOString(),
+                last_error: '',
+                next_retry_at: Date.now(),
+              })
+              continue
+            } catch (retryError) {
+              await idbUpdateOutboxStatus(operation.queue_id, 'auth_error', {
+                retry_count: operation.retry_count || 0,
+                next_retry_at: Date.now() + 30 * 1000,
+                last_error: retryError instanceof Error ? retryError.message : 'Auth error',
+              })
+              syncState.lastError =
+                retryError instanceof Error ? retryError.message : 'Auth error'
+              break
+            }
+          }
+          await idbUpdateOutboxStatus(operation.queue_id, 'auth_error', {
+            retry_count: operation.retry_count || 0,
+            next_retry_at: Date.now() + 30 * 1000,
+            last_error: error instanceof Error ? error.message : 'Auth error',
+          })
+          syncState.lastError = error instanceof Error ? error.message : 'Auth error'
+          break
+        }
         const retryCount = (operation.retry_count || 0) + 1
         const delay = nextBackoffDelayMs(retryCount)
         await idbUpdateOutboxStatus(
@@ -318,10 +405,6 @@ export async function triggerSync() {
           },
         )
         syncState.lastError = error instanceof Error ? error.message : 'Sync failed'
-        if (isAuthorizationSyncError(error)) {
-          // Avoid hammering identical unauthorized writes for entire queue.
-          break
-        }
       } finally {
         syncState.runProcessed += 1
         emitSyncState()
@@ -589,6 +672,7 @@ export function configureRealtimeSync({ profile, allowedSubstationIds = [], isMa
     })
     return channel
   })
+  scheduleSync(30)
 }
 
 export async function initializeSyncEngine() {
@@ -614,6 +698,12 @@ export async function initializeSyncEngine() {
   if (syncState.online) {
     scheduleSync(50)
   }
+  console.info('[sync] startup', {
+    userId: getSupabaseAuthDiagnostics().userId || '',
+    hasSession: getSupabaseAuthDiagnostics().hasSession,
+    pending: syncState.pending,
+    lastError: syncState.lastError || '',
+  })
   window.setInterval(() => {
     void idbCleanupSyncedOutbox(SYNCED_OUTBOX_RETENTION_MS).catch(() => {})
   }, 10 * 60 * 1000)
