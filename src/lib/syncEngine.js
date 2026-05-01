@@ -21,6 +21,9 @@ const listeners = new Set()
 let syncInFlight = false
 let syncTimer = null
 let cloudSyncAvailable = null
+let cloudProbeInFlight = null
+let cloudProbeAuthBackoffUntil = 0
+let cloudProbeAuthFailureCount = 0
 let realtimeChannels = []
 let realtimeFlushTimer = null
 const realtimeChangedScopes = new Set()
@@ -105,24 +108,48 @@ async function ensureCloudSyncAvailability() {
   if (!supabase) {
     return false
   }
+  const now = Date.now()
+  if (cloudProbeAuthBackoffUntil > now) {
+    return false
+  }
   if (cloudSyncAvailable !== null) {
     return cloudSyncAvailable
   }
-  const { error } = await supabase.from('erp_records').select('id', { head: true, count: 'exact' })
-  if (error) {
-    if (isAuthorizationSyncError(error)) {
-      syncState.firebaseJwtAccepted = false
-      emitSyncState()
-      console.info('[sync] firebase-jwt-rejected', {
-        status: Number(error?.status || error?.statusCode || 0),
-      })
-    }
-    cloudSyncAvailable = !isMissingErpRecordsError(error)
-    return cloudSyncAvailable
+  const authStatus = await canRunCloudSync()
+  if (!authStatus.ready) {
+    return false
   }
-  syncState.firebaseJwtAccepted = true
-  cloudSyncAvailable = true
-  return true
+  if (cloudProbeInFlight) {
+    return cloudProbeInFlight
+  }
+  cloudProbeInFlight = (async () => {
+    const { error } = await supabase.from('erp_records').select('id', { head: true, count: 'exact' })
+    if (error) {
+      if (isAuthorizationSyncError(error)) {
+        syncState.firebaseJwtAccepted = false
+        cloudProbeAuthFailureCount += 1
+        const backoffMs = Math.min(30_000 * (2 ** (cloudProbeAuthFailureCount - 1)), 5 * 60 * 1000)
+        cloudProbeAuthBackoffUntil = Date.now() + backoffMs
+        emitSyncState()
+        console.info('[sync] firebase-jwt-rejected', {
+          status: Number(error?.status || error?.statusCode || 0),
+          backoffMs,
+        })
+      }
+      cloudSyncAvailable = !isMissingErpRecordsError(error)
+      return cloudSyncAvailable
+    }
+    syncState.firebaseJwtAccepted = true
+    cloudProbeAuthFailureCount = 0
+    cloudProbeAuthBackoffUntil = 0
+    cloudSyncAvailable = true
+    return true
+  })()
+  try {
+    return await cloudProbeInFlight
+  } finally {
+    cloudProbeInFlight = null
+  }
 }
 
 function emitSyncState() {
@@ -296,16 +323,18 @@ export async function triggerSync() {
   const authStatus = await canRunCloudSync()
   if (!authStatus.ready) {
     await idbRequeueOutboxByStatus(['syncing'])
-    syncState.lastError = 'Login required for cloud sync.'
+    syncState.lastError = authStatus.hasFirebaseUser ? '' : 'Login required for cloud sync.'
     await refreshCounters()
     emitSyncState()
-    console.info('[sync] paused-login-required', {
-      userId: authStatus.userId || '',
-      hasFirebaseUser: authStatus.hasFirebaseUser,
-      hasFirebaseToken: authStatus.hasFirebaseToken,
-      pending: syncState.pending,
-      lastError: syncState.lastError,
-    })
+    if (!authStatus.hasFirebaseUser) {
+      console.info('[sync] paused-login-required', {
+        userId: authStatus.userId || '',
+        hasFirebaseUser: authStatus.hasFirebaseUser,
+        hasFirebaseToken: authStatus.hasFirebaseToken,
+        pending: syncState.pending,
+        lastError: syncState.lastError,
+      })
+    }
     return
   }
   if (!(await ensureCloudSyncAvailability())) {
@@ -447,6 +476,10 @@ export async function triggerSync() {
     const pulledCount = await pullServerUpdatesIncremental()
     syncState.runPulled = pulledCount
     syncState.lastSyncAt = new Date().toISOString()
+    if (syncState.runPushed > 0 || pulledCount > 0) {
+      syncState.lastError = ''
+      syncState.firebaseJwtAccepted = true
+    }
     await idbCleanupSyncedOutbox(SYNCED_OUTBOX_RETENTION_MS)
   } finally {
     syncInFlight = false
