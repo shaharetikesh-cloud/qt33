@@ -8,6 +8,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const missingSupabaseEnv = getMissingEnvKeys('supabase')
 
 let accessTokenProvider = null
+let resolvingAccessToken = false
 
 export function setSupabaseAccessTokenProvider(provider) {
   accessTokenProvider = provider
@@ -17,10 +18,16 @@ export async function getSupabaseAccessToken({ forceRefresh = false } = {}) {
   if (!accessTokenProvider) {
     return ''
   }
+  if (resolvingAccessToken) {
+    return ''
+  }
   try {
+    resolvingAccessToken = true
     return (await accessTokenProvider({ forceRefresh })) || ''
   } catch {
     return ''
+  } finally {
+    resolvingAccessToken = false
   }
 }
 
@@ -57,7 +64,9 @@ export const supabase =
     ? createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         fetch: async (url, options = {}) => {
-          const token = await getSupabaseAccessToken()
+          const urlText = String(url || '')
+          const isAuthEndpoint = urlText.includes('/auth/v1/')
+          const token = isAuthEndpoint ? '' : await getSupabaseAccessToken()
           const headers = new Headers(options.headers || {})
           // Keep Supabase apikey behavior and attach runtime auth when available.
           if (token && !headers.has('Authorization')) {
