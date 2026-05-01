@@ -289,6 +289,41 @@
 
   /* —— Touch-friendly targets (small / coarse pointers) —— */
   @media (max-width: 767px) {
+    .page-daily-log .workspace-focus-toolbar,
+    .page-maintenance .workspace-focus-toolbar,
+    .page-history-register .workspace-focus-toolbar {
+      padding: 10px;
+      gap: 8px;
+    }
+
+    .page-daily-log .content-card h2,
+    .page-maintenance .content-card h2,
+    .page-history-register .content-card h2,
+    .report-surface-card h2 {
+      font-size: 1.05rem;
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+
+    .page-daily-log .table-shell,
+    .page-maintenance .table-shell,
+    .page-history-register .table-shell,
+    .report-surface-card .table-shell {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .report-preview-layout-toggle {
+      width: 100%;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .report-preview-layout-toggle .ghost-button,
+    .report-preview-layout-toggle .ghost-light-button {
+      flex: 1 1 46%;
+    }
+
     .primary-button,
     .ghost-button,
     .ghost-light-button,
@@ -428,7 +463,35 @@
   .daily-log-report-table {
     width: 100% !important;
     min-width: 100% !important;
-    table-layout: auto !important;
+    table-layout: fixed !important;
     font-size: 10.5pt;
+  }
+
+  .report-document,
+  .report-landscape,
+  .report-table-shell,
+  .report-table,
+  .report-table thead,
+  .report-table tbody,
+  .report-table tr,
+  .report-table th,
+  .report-table td {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .report-table thead {
+    display: table-header-group !important;
+  }
+
+  .report-table tfoot {
+    display: table-footer-group !important;
+  }
+
+  [data-pdf-section='daily-log-main'],
+  [data-pdf-section='daily-log-interruptions'] {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
   }
 }

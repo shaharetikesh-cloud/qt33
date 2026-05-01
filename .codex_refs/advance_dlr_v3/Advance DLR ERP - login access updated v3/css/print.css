@@ -1,0 +1,378 @@
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .no-print,
+  .sidebar,
+  .topbar,
+  .toast-region,
+  .dailylog-active-time-bar,
+  button,
+  .module-toolbar,
+  .toolbar,
+  .form-actions,
+  .summary-actions,
+  .search-row,
+  .filter-row {
+    display: none !important;
+  }
+
+  .app-shell,
+  .main-shell,
+  .content-shell,
+  .module-shell,
+  .card,
+  .battery-sheet,
+  .report-section {
+    display: block !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    border: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .table-shell {
+    overflow: visible !important;
+    border: 0 !important;
+  }
+
+  table,
+  th,
+  td {
+    border-color: #000000 !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  .compact-table tr.report-row-warning td,
+  .compact-table tr.report-row-error td {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .month-end-pack-section {
+    break-after: page !important;
+    page-break-after: always !important;
+    padding-top: 4mm !important;
+  }
+
+  .month-end-pack-section:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+
+  body.print-month-pack {
+    font-size: 8.6pt !important;
+  }
+
+  body.print-month-pack .month-end-pack-print,
+  body.print-month-pack .month-end-pack-print .report-section {
+    width: 100% !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .report-header {
+    margin-bottom: 3mm !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .report-header h2,
+  body.print-month-pack .month-end-pack-print .report-header h3 {
+    margin-bottom: 1mm !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .table-shell {
+    overflow: visible !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .compact-table {
+    width: 100% !important;
+    table-layout: auto !important;
+    font-size: 7.8pt !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .compact-table thead {
+    display: table-header-group !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .compact-table tr,
+  body.print-month-pack .month-end-pack-print .compact-table th,
+  body.print-month-pack .month-end-pack-print .compact-table td {
+    page-break-inside: avoid !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .compact-table th,
+  body.print-month-pack .month-end-pack-print .compact-table td {
+    border: 0.8px solid #000000 !important;
+    padding: 2px 4px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+    font-variant-numeric: tabular-nums !important;
+  }
+
+  body.print-month-pack .month-end-pack-print .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 2mm !important;
+    margin-bottom: 3mm !important;
+  }
+
+  input,
+  select,
+  textarea {
+    border: 0 !important;
+    background: transparent !important;
+    color: #000000 !important;
+    padding: 0 !important;
+  }
+
+  .battery-table-shell,
+  .battery-summary-shell {
+    border: 1px solid #000000 !important;
+  }
+
+  body.print-dailylog {
+    font-size: 9pt !important;
+  }
+
+  body.print-dailylog .daily-log-print-sheet {
+    width: 100% !important;
+  }
+
+  body.print-dailylog .daily-log-print-sheet .report-header {
+    margin-bottom: 6mm !important;
+    display: block !important;
+    text-align: center !important;
+  }
+
+  body.print-dailylog .daily-log-print-sheet .report-header > div {
+    display: block !important;
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  body.print-dailylog .daily-log-print-sheet .report-header .tag {
+    display: inline-flex !important;
+    margin-top: 3mm !important;
+  }
+
+  body.print-dailylog .daily-log-print-table-shell {
+    overflow: visible !important;
+    border: 0 !important;
+  }
+
+  body.print-dailylog .daily-log-print-table {
+    width: 100% !important;
+    min-width: 100% !important;
+    table-layout: auto !important;
+    font-size: 8.4pt !important;
+  }
+
+  body.print-dailylog .daily-log-print-table thead {
+    display: table-header-group !important;
+  }
+
+  body.print-dailylog .daily-log-print-table tfoot {
+    display: table-footer-group !important;
+  }
+
+  body.print-dailylog .daily-log-print-table tr,
+  body.print-dailylog .daily-log-print-table th,
+  body.print-dailylog .daily-log-print-table td {
+    page-break-inside: avoid !important;
+    position: static !important;
+  }
+
+  body.print-dailylog .daily-log-print-table th,
+  body.print-dailylog .daily-log-print-table td {
+    border: 0.8px solid #000000 !important;
+    padding: 3px 4px !important;
+    line-height: 1.15 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    font-variant-numeric: tabular-nums !important;
+  }
+
+  body.print-dailylog .daily-log-print-table th {
+    font-size: 8pt !important;
+    font-weight: 700 !important;
+  }
+
+  body.print-dailylog .daily-log-print-table td {
+    font-size: 8.4pt !important;
+  }
+
+  body.print-dailylog .dailylog-summary-table th,
+  body.print-dailylog .dailylog-summary-table td {
+    padding: 4px 6px !important;
+    font-size: 8.6pt !important;
+  }
+
+  body.print-battery-single,
+  body.print-battery-batch {
+    font-size: 9pt !important;
+  }
+
+  body.print-battery-single .battery-sheet,
+  body.print-battery-batch .battery-sheet {
+    border: 1px solid #000000 !important;
+    border-radius: 0 !important;
+    padding: 5mm !important;
+    gap: 4mm !important;
+  }
+
+  body.print-battery-single .battery-register-grid,
+  body.print-battery-batch .battery-register-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 78mm !important;
+    gap: 4mm !important;
+    align-items: start !important;
+  }
+
+  body.print-battery-single .battery-side-card,
+  body.print-battery-batch .battery-side-card,
+  body.print-battery-single .battery-table-shell,
+  body.print-battery-batch .battery-table-shell {
+    border: 1px solid #000000 !important;
+    padding: 2.5mm !important;
+    background: #ffffff !important;
+  }
+
+  body.print-battery-single .battery-register-table,
+  body.print-battery-single .battery-summary-table,
+  body.print-battery-batch .battery-register-table,
+  body.print-battery-batch .battery-summary-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  body.print-battery-single .battery-register-table th,
+  body.print-battery-single .battery-register-table td,
+  body.print-battery-single .battery-summary-table th,
+  body.print-battery-single .battery-summary-table td,
+  body.print-battery-batch .battery-register-table th,
+  body.print-battery-batch .battery-register-table td,
+  body.print-battery-batch .battery-summary-table th,
+  body.print-battery-batch .battery-summary-table td {
+    border: 0.8px solid #000000 !important;
+    padding: 2px 4px !important;
+    font-size: 8.2pt !important;
+    line-height: 1.15 !important;
+  }
+
+  body.print-battery-single .battery-sheet-header,
+  body.print-battery-batch .battery-sheet-header {
+    margin-bottom: 2mm !important;
+  }
+
+  body.print-battery-single .battery-sheet-header h2,
+  body.print-battery-batch .battery-sheet-header h2 {
+    font-size: 10pt !important;
+  }
+
+  body.print-battery-single .battery-sheet-header h3,
+  body.print-battery-batch .battery-sheet-header h3 {
+    font-size: 9pt !important;
+  }
+
+  body.print-battery-single .battery-meta-grid,
+  body.print-battery-batch .battery-meta-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 2mm 4mm !important;
+    margin-bottom: 2mm !important;
+  }
+
+  body.print-battery-single .battery-checklist,
+  body.print-battery-batch .battery-checklist {
+    gap: 1.5mm !important;
+  }
+
+  body.print-battery-single .battery-check-item,
+  body.print-battery-batch .battery-check-item {
+    border: 0.8px solid #000000 !important;
+    border-radius: 0 !important;
+    padding: 2px 4px !important;
+    background: #ffffff !important;
+    font-size: 7.9pt !important;
+  }
+
+  body.print-battery-single .battery-generated-remark,
+  body.print-battery-batch .battery-generated-remark {
+    min-height: 18mm !important;
+    border: 0.8px solid #000000 !important;
+    padding: 3px 4px !important;
+    background: #ffffff !important;
+    font-size: 8pt !important;
+  }
+
+  body.print-battery-single .battery-condition-pill,
+  body.print-battery-single .battery-cell-condition,
+  body.print-battery-batch .battery-condition-pill,
+  body.print-battery-batch .battery-cell-condition {
+    min-width: 0 !important;
+    border-radius: 0 !important;
+    border: 0.8px solid #000000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 2px 4px !important;
+    font-size: 7.9pt !important;
+  }
+
+  body.print-battery-single .battery-signatures,
+  body.print-battery-batch .battery-signatures {
+    margin-top: 4mm !important;
+    padding-top: 2mm !important;
+    gap: 8mm !important;
+  }
+
+  body.print-battery-single .signature-line,
+  body.print-battery-batch .signature-line {
+    min-height: 10mm !important;
+  }
+
+  body.print-battery-batch .battery-print-page {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6mm !important;
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  body.print-battery-batch .battery-print-page:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+
+  body.print-battery-batch .battery-print-block {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  body.print-battery-batch .battery-print-block .battery-sheet {
+    padding: 4mm !important;
+  }
+
+  body.print-battery-batch .battery-print-block .battery-sheet-header h2 {
+    font-size: 9pt !important;
+  }
+
+  body.print-battery-batch .battery-print-block .battery-sheet-header h3 {
+    font-size: 8.4pt !important;
+  }
+
+  body.print-battery-batch .battery-print-block .battery-register-table th,
+  body.print-battery-batch .battery-print-block .battery-register-table td,
+  body.print-battery-batch .battery-print-block .battery-summary-table th,
+  body.print-battery-batch .battery-print-block .battery-summary-table td {
+    padding: 1.5px 3px !important;
+    font-size: 7.6pt !important;
+  }
+
+  body.print-battery-batch .battery-print-block .battery-check-item,
+  body.print-battery-batch .battery-print-block .battery-generated-remark,
+  body.print-battery-batch .battery-print-block .battery-condition-pill,
+  body.print-battery-batch .battery-print-block .battery-cell-condition {
+    font-size: 7.5pt !important;
+  }
+}

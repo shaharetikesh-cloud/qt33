@@ -6,6 +6,7 @@ import {
   setPersistence,
 } from 'firebase/auth'
 import { buildMissingEnvError, getMissingEnvKeys } from './envConfig'
+import { isOfflineLocalSingleUserProfile } from './runtimeConfig'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -22,7 +23,9 @@ export const firebaseConfigError = firebaseConfigMissing
   ? buildMissingEnvError('firebase', 'Firebase')
   : null
 
-export const firebaseApp = firebaseConfigMissing ? null : initializeApp(firebaseConfig)
+export const firebaseApp = firebaseConfigMissing || isOfflineLocalSingleUserProfile
+  ? null
+  : initializeApp(firebaseConfig)
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null
 
 if (firebaseAuth) {

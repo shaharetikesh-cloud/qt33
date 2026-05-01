@@ -6730,3 +6730,28 @@ section,
     padding: 7px 8px !important;
   }
 }
+
+.workspace-header.workspace-header-offline {
+  padding: 6px 12px;
+  min-height: 56px;
+}
+
+.workspace-header.workspace-header-offline .workspace-header-inner {
+  gap: 8px;
+  align-items: center;
+}
+
+.workspace-header.workspace-header-offline .workspace-brand-sub,
+.workspace-header.workspace-header-offline .workspace-breadcrumbs {
+  display: none;
+}
+
+.workspace-header.workspace-header-offline .workspace-header-center h1 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.workspace-header.workspace-header-offline .workspace-brand-title {
+  font-size: 0.92rem;
+}
+

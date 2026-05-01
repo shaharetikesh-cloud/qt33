@@ -1,0 +1,36 @@
+{
+  "fixtureId": "ls-slot-mapping",
+  "description": "LS mapping parity cases for start-slot exclusion and duration preservation.",
+  "cases": [
+    {
+      "id": "case-0600-1000-exclude-start",
+      "input": {
+        "fromTime": "06:00",
+        "toTime": "10:00",
+        "excludeStartHourSlot": true,
+        "preserveDurationWhenShifted": true
+      },
+      "expectedOverlayHours": [7, 8, 9, 10]
+    },
+    {
+      "id": "case-0600-1000-include-start",
+      "input": {
+        "fromTime": "06:00",
+        "toTime": "10:00",
+        "excludeStartHourSlot": false,
+        "preserveDurationWhenShifted": true
+      },
+      "expectedOverlayHours": [6, 7, 8, 9, 10]
+    },
+    {
+      "id": "case-2200-2400-exclude-start",
+      "input": {
+        "fromTime": "22:00",
+        "toTime": "24:00",
+        "excludeStartHourSlot": true,
+        "preserveDurationWhenShifted": true
+      },
+      "expectedOverlayHours": [23, 24]
+    }
+  ]
+}

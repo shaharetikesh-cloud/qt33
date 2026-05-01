@@ -1,0 +1,29 @@
+{
+  "fixtureId": "asset-account-summary",
+  "description": "Asset account summary parity fixture derived from maintenance entries.",
+  "filters": {
+    "fromDate": "2026-04-01",
+    "toDate": "2026-04-30",
+    "assetId": "AS-01"
+  },
+  "rows": [
+    {
+      "entryId": "MNT-001",
+      "operationalDate": "2026-04-28",
+      "durationMinutes": 40,
+      "partChanged": true
+    },
+    {
+      "entryId": "MNT-002",
+      "operationalDate": "2026-04-29",
+      "durationMinutes": 30,
+      "partChanged": false
+    }
+  ],
+  "expectedSummary": {
+    "maintenanceCount": 2,
+    "partChangeCount": 1,
+    "totalDurationMinutes": 70,
+    "lastMaintenanceDate": "2026-04-29"
+  }
+}

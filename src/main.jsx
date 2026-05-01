@@ -9,6 +9,7 @@ import { migrateLegacyLocalScopesToIndexedDb } from './lib/legacyMigration'
 import { initializeNativeRuntime } from './lib/nativeRuntime'
 import { startNetworkLoading, stopNetworkLoading } from './lib/pageLoading'
 import { logRuntimeConfigurationStatus } from './lib/runtimeDiagnostics'
+import { isOfflineLocalSingleUserProfile } from './lib/runtimeConfig'
 import { initializeSyncEngine } from './lib/syncEngine'
 
 const rootElement = document.getElementById('root')
@@ -125,9 +126,12 @@ async function bootstrapApplication() {
   setupGlobalFetchLoadingTracker()
   logRuntimeConfigurationStatus()
   await migrateLegacyLocalScopesToIndexedDb()
-  await initializeSyncEngine()
+  if (!isOfflineLocalSingleUserProfile) {
+    await initializeSyncEngine()
+  }
   await initializeNativeRuntime()
 
+  // offline-local-single-user: direct local dashboard boot, no login gate, no internet dependency.
   mountIntoRoot(
     <StrictMode>
       <AppCrashBoundary>

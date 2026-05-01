@@ -426,121 +426,99 @@ export function DailyLogReportView({
     { key: 'source', label: 'Source', align: 'center' },
     { key: 'remark', label: 'Remark' },
   ]
-  const meterChangeColumns = [
-    { key: 'srNo', label: 'SR', align: 'center' },
-    { key: 'feederName', label: 'Feeder' },
-    { key: 'effectiveTime', label: 'Effective Time' },
-    { key: 'oldMeterLastReading', label: 'Old Last', align: 'right' },
-    { key: 'newMeterStartReading', label: 'New Start', align: 'right' },
-    { key: 'remark', label: 'Remark' },
-  ]
   return (
     <ReportDocument documentRef={documentRef} orientation={report.orientation} reportType="daily-log" title={report.title}>
-      <ReportHeader companyName={report.companyName} title={report.title} subtitle="Daily substation operational sheet" />
-      <MetadataGrid items={report.metadata} />
-      <section className="daily-log-report-shell">
-        <table className="report-table daily-log-report-table">
-          <thead>
-            <tr>
-              <th rowSpan={3}>Hrs</th>
-              <th rowSpan={3}>{report.totalColumnLabel || 'Total Amp'}</th>
-              {report.headerGroups.map((group) => (
-                <th
-                  key={group.key}
-                  colSpan={group.items.reduce((total, item) => total + item.metrics.length, 0)}
-                >
-                  {group.label}
-                </th>
-              ))}
-              <th rowSpan={3}>Remark</th>
-            </tr>
-            <tr>
-              {report.headerGroups.map((group) =>
-                group.items.map((item) => (
-                  <th key={`${group.key}-${item.kind}-${item.id}`} colSpan={item.metrics.length}>
-                    {item.label}
+      <section data-pdf-section="daily-log-main">
+        <ReportHeader companyName={report.companyName} title={report.title} subtitle="Daily substation operational sheet" />
+        <MetadataGrid items={report.metadata} />
+        <section className="daily-log-report-shell">
+          <table className="report-table daily-log-report-table">
+            <thead>
+              <tr>
+                <th rowSpan={3}>Hrs</th>
+                <th rowSpan={3}>{report.totalColumnLabel || 'Total Amp'}</th>
+                {report.headerGroups.map((group) => (
+                  <th
+                    key={group.key}
+                    colSpan={group.items.reduce((total, item) => total + item.metrics.length, 0)}
+                  >
+                    {group.label}
                   </th>
-                )),
-              )}
-            </tr>
-            <tr>
-              {report.headerGroups.map((group) =>
-                group.items.map((item) =>
-                  item.metrics.map((metric) => (
-                    <th key={`${group.key}-${item.kind}-${item.id}-${metric}`}>
-                      {metric === 'amp'
-                        ? 'Amp'
-                        : metric === 'kv'
-                          ? 'KV'
-                          : metric === 'kwh'
-                            ? 'KWH'
-                            : metric === 'tap'
-                              ? 'Tap'
-                              : metric === 'temperature'
-                                ? 'Temp'
-                                : 'Voltage'}
+                ))}
+                <th rowSpan={3}>Remark</th>
+              </tr>
+              <tr>
+                {report.headerGroups.map((group) =>
+                  group.items.map((item) => (
+                    <th key={`${group.key}-${item.kind}-${item.id}`} colSpan={item.metrics.length}>
+                      {item.label}
                     </th>
                   )),
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {report.tableRows.map((row) => (
-              <tr key={row.id}>
-                <td className="align-center">{row.hour}</td>
-                <td className="align-right report-total-auto-cell">
-                  {formatNumber(row.totalLoad)}
-                </td>
-                {Object.values(row.cells).map((cell, index) => (
-                  <td
-                    key={`${row.id}-${index}`}
-                    className={[
-                      cell.isAutoCalculated ? 'report-incomer-auto-cell' : '',
-                      cell.overlayCode ? `daily-log-event-cell daily-log-event-${cell.overlaySource}` : '',
-                      cell.sourceType === 'auto_gap_fill' ? 'daily-log-report-auto-fill' : '',
-                      cell.isPending ? 'daily-log-report-pending' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    {cell.overlayCode || cell.pendingCode || cell.value || '-'}
-                  </td>
-                ))}
-                <td>{row.remark || '-'}</td>
+                )}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      <SectionTitle>Interruption Register</SectionTitle>
-      <ReportTable
-        columns={interruptionColumns}
-        rows={report.interruptionRows}
-        className="report-table-compact"
-        chunkSize={18}
-      />
-      <SectionTitle>Meter Change Register</SectionTitle>
-      <ReportTable
-        columns={meterChangeColumns}
-        rows={report.meterChangeRows}
-        className="report-table-compact"
-        chunkSize={18}
-      />
-      {report.notes?.length ? (
-        <section className="report-notes">
-          {report.notes.map((note) => (
-            <p key={note}>{note}</p>
-          ))}
+              <tr>
+                {report.headerGroups.map((group) =>
+                  group.items.map((item) =>
+                    item.metrics.map((metric) => (
+                      <th key={`${group.key}-${item.kind}-${item.id}-${metric}`}>
+                        {metric === 'amp'
+                          ? 'Amp'
+                          : metric === 'kv'
+                            ? 'KV'
+                            : metric === 'kwh'
+                              ? 'KWH'
+                              : metric === 'tap'
+                                ? 'Tap'
+                                : metric === 'temperature'
+                                  ? 'Temp'
+                                  : 'Voltage'}
+                      </th>
+                    )),
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {report.tableRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="align-center">{row.hour}</td>
+                  <td className="align-right report-total-auto-cell">
+                    {formatNumber(row.totalLoad)}
+                  </td>
+                  {Object.values(row.cells).map((cell, index) => (
+                    <td
+                      key={`${row.id}-${index}`}
+                      className={[
+                        cell.isAutoCalculated ? 'report-incomer-auto-cell' : '',
+                        cell.overlayCode ? `daily-log-event-cell daily-log-event-${cell.overlaySource}` : '',
+                        cell.sourceType === 'auto_gap_fill' ? 'daily-log-report-auto-fill' : '',
+                        cell.isPending ? 'daily-log-report-pending' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {cell.overlayCode || cell.pendingCode || cell.value || '-'}
+                    </td>
+                  ))}
+                  <td>{row.remark || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
-      ) : null}
-      <SignatureBlock
-        items={[
-          { label: 'Operator', value: report.signatures.operator },
-          { label: 'In Charge', value: report.signatures.inCharge },
-        ]}
-      />
-      <ReportFooter footerText={footerText} />
+      </section>
+      <section data-pdf-section="daily-log-interruptions">
+        <ReportHeader companyName={report.companyName} title="Interruption Register" subtitle={report.title} />
+        <MetadataGrid items={report.metadata} />
+        <SectionTitle>Interruption Register</SectionTitle>
+        <ReportTable
+          columns={interruptionColumns}
+          rows={report.interruptionRows}
+          className="report-table-compact"
+          chunkSize={18}
+        />
+        <ReportFooter footerText={footerText} />
+      </section>
     </ReportDocument>
   )
 }

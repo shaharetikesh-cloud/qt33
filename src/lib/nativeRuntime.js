@@ -3,6 +3,7 @@ import { App } from '@capacitor/app'
 import { Network } from '@capacitor/network'
 import { Toast } from '@capacitor/toast'
 import { emitSyncStateSnapshot, scheduleSync, setOnlineState } from './syncEngine'
+import { isOfflineLocalSingleUserProfile } from './runtimeConfig'
 
 function isNative() {
   return Capacitor.isNativePlatform()
@@ -10,6 +11,9 @@ function isNative() {
 
 async function showConnectivityToast(isOnline) {
   if (!isNative()) {
+    return
+  }
+  if (isOfflineLocalSingleUserProfile) {
     return
   }
   await Toast.show({

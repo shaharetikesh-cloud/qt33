@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import {
   getNavigationGroupState,
   getPreferredSubstationId,
@@ -7,6 +8,8 @@ import {
 } from '../lib/uiPreferences'
 import { alertDetailSaved } from '../lib/detailSavedAlert'
 import { loadSessionActivity } from '../lib/unifiedDataService'
+import { isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
+import { APP_VERSION_NAME } from '../lib/appVersion'
 
 function resolveDisplayUsername(profile, sessionUser) {
   const direct = String(profile?.username || sessionUser?.username || '').trim()
@@ -21,10 +24,10 @@ function resolveDisplayUsername(profile, sessionUser) {
 }
 
 export default function SessionPage() {
+  const navigate = useNavigate()
   const {
     profile,
     session,
-    backendLabel,
     isApproved,
     isAdmin,
     isSuperAdmin,
@@ -45,6 +48,47 @@ export default function SessionPage() {
     confirmPassword: '',
   })
   const [passwordStatus, setPasswordStatus] = useState('')
+  const [storageUsageKb, setStorageUsageKb] = useState(0)
+
+  function estimateStorageUsageKb() {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return 0
+    }
+    let bytes = 0
+    for (const key of Object.keys(window.localStorage)) {
+      if (!key.startsWith('umsw.')) {
+        continue
+      }
+      const value = window.localStorage.getItem(key) || ''
+      bytes += key.length + value.length
+    }
+    return Math.round(bytes / 1024)
+  }
+
+  useEffect(() => {
+    if (!isOfflineLocalSingleUserProfile) {
+      return
+    }
+    setStorageUsageKb(estimateStorageUsageKb())
+  }, [])
+
+  function handleResetLocalData() {
+    const confirmed = window.confirm(
+      'All data on this device will be deleted. Backup export kelay ka? हा action undo hot nahi.',
+    )
+    if (!confirmed) {
+      return
+    }
+    const keysToDelete = Object.keys(window.localStorage).filter((key) => key.startsWith('umsw.'))
+    for (const key of keysToDelete) {
+      window.localStorage.removeItem(key)
+    }
+    if (typeof window.indexedDB !== 'undefined') {
+      window.indexedDB.deleteDatabase('umsw-offline-db')
+    }
+    window.alert('Local device data reset complete. App reload hot aahe.')
+    window.location.reload()
+  }
 
   useEffect(() => {
     let active = true
@@ -125,19 +169,25 @@ export default function SessionPage() {
           </article>
           <article className="detail-card">
             <h3>Role</h3>
-            <p>{roleLabel || 'Pending profile'}</p>
+            <p>{isOfflineLocalSingleUserProfile ? 'User' : roleLabel || 'Pending profile'}</p>
           </article>
           <article className="detail-card">
             <h3>Approval</h3>
             <p>{isApproved ? 'Approved' : profile?.approval_status || 'Pending'}</p>
           </article>
-          <article className="detail-card">
-            <h3>Backend</h3>
-            <p>{backendLabel}</p>
-          </article>
+          {!isOfflineLocalSingleUserProfile ? (
+            <article className="detail-card">
+              <h3>Backend</h3>
+              <p>{backendLabel}</p>
+            </article>
+          ) : null}
           <article className="detail-card">
             <h3>Access</h3>
-            <p>{isSuperAdmin ? 'Main Admin' : isAdmin ? 'Substation Admin' : roleLabel}</p>
+            <p>
+              {isOfflineLocalSingleUserProfile
+                ? 'User'
+                : isSuperAdmin ? 'Main Admin' : isAdmin ? 'Substation Admin' : roleLabel}
+            </p>
           </article>
           <article className="detail-card">
             <h3>Assigned Substation</h3>
@@ -145,6 +195,40 @@ export default function SessionPage() {
           </article>
         </div>
       </section>
+
+      {isOfflineLocalSingleUserProfile ? (
+        <section className="content-card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Settings</p>
+              <h2>Device backup and storage</h2>
+            </div>
+          </div>
+          <div className="details-grid">
+            <article className="detail-card">
+              <h3>Profile</h3>
+              <p>User</p>
+            </article>
+            <article className="detail-card">
+              <h3>App version</h3>
+              <p>{APP_VERSION_NAME}</p>
+            </article>
+            <article className="detail-card">
+              <h3>Storage usage</h3>
+              <p>{storageUsageKb} KB (approx)</p>
+            </article>
+          </div>
+          <div className="inline-actions">
+            <button type="button" className="primary-button" onClick={() => navigate('/masters')}>
+              Backup Export / Import
+            </button>
+            <button type="button" className="danger-button" onClick={handleResetLocalData}>
+              Reset Local Data
+            </button>
+          </div>
+          <p className="muted-copy">Data is saved on this device. Regular backup export recommended.</p>
+        </section>
+      ) : null}
 
       {profile?.must_change_password ? (
         <section className="callout warning-callout">

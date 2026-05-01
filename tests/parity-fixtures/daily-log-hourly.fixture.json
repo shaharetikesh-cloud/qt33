@@ -1,0 +1,54 @@
+{
+  "fixtureId": "daily-log-hourly",
+  "description": "Hourly table base fixture for daily log parity checks.",
+  "operationalDate": "2026-04-28",
+  "substationId": "SS-01",
+  "feeders": [
+    {
+      "id": "F-11A",
+      "name": "11KV A"
+    }
+  ],
+  "rows": [
+    {
+      "hour": "06:00",
+      "feederReadings": {
+        "F-11A": {
+          "kwh": "1200"
+        }
+      }
+    },
+    {
+      "hour": "07:00",
+      "feederReadings": {
+        "F-11A": {
+          "kwh": ""
+        }
+      }
+    },
+    {
+      "hour": "08:00",
+      "feederReadings": {
+        "F-11A": {
+          "kwh": ""
+        }
+      }
+    },
+    {
+      "hour": "09:00",
+      "feederReadings": {
+        "F-11A": {
+          "kwh": ""
+        }
+      }
+    },
+    {
+      "hour": "10:00",
+      "feederReadings": {
+        "F-11A": {
+          "kwh": "1216"
+        }
+      }
+    }
+  ]
+}

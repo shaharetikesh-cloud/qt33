@@ -1,8 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import AppShell from './components/AppShell'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { startRouteLoading, stopRouteLoading, subscribePageLoading } from './lib/pageLoading'
+import { isOfflineLocalSingleUserProfile } from './lib/runtimeConfig'
 
 function AdminOnlyPage({ children }) {
   const { isMainAdmin } = useAuth()
@@ -61,12 +64,51 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <p className="eyebrow">Unified workspace</p>
-        <h1>Loading session...</h1>
-        <p>Auth, profile, ani access posture verify hot aahe.</p>
+        <p className="eyebrow">QT33</p>
+        <h1>Preparing local workspace...</h1>
+        <p>Device storage init hot aahe. Krupaya thoda wait kara.</p>
       </div>
     </div>
   )
+}
+
+function NativeBackButtonHandler() {
+  const location = useLocation()
+
+  useEffect(() => {
+    if (!isOfflineLocalSingleUserProfile || !Capacitor.isNativePlatform()) {
+      return () => {}
+    }
+
+    let backBusy = false
+    const listenerPromise = CapacitorApp.addListener('backButton', async ({ canGoBack }) => {
+      if (backBusy) {
+        return
+      }
+      backBusy = true
+      try {
+        const atDashboard = location.pathname === '/' || location.pathname === ''
+        if (atDashboard || !canGoBack) {
+          const shouldExit = window.confirm('Exit application?')
+          if (shouldExit) {
+            await CapacitorApp.exitApp()
+          }
+          return
+        }
+        window.history.back()
+      } finally {
+        window.setTimeout(() => {
+          backBusy = false
+        }, 150)
+      }
+    })
+
+    return () => {
+      void listenerPromise.then((handle) => handle.remove())
+    }
+  }, [location.pathname])
+
+  return null
 }
 
 function PublicRoute() {
@@ -115,6 +157,10 @@ function WorkspaceIndexPage() {
 }
 
 function GlobalLoadingLayer() {
+  if (isOfflineLocalSingleUserProfile) {
+    return null
+  }
+
   const location = useLocation()
   const routeKey = useMemo(
     () => `${location.pathname}|${location.search}|${location.hash}`,
@@ -158,6 +204,7 @@ export default function App() {
   return (
     <AuthProvider>
       <HashRouter>
+        <NativeBackButtonHandler />
         <GlobalLoadingLayer />
         <Routes>
           <Route path="/login" element={<PublicRoute />} />
@@ -166,17 +213,25 @@ export default function App() {
             <Route
               path="masters"
               element={
-                <UserManagerPage>
-                  <MastersPage />
-                </UserManagerPage>
+                isOfflineLocalSingleUserProfile
+                  ? <MastersPage />
+                  : (
+                    <UserManagerPage>
+                      <MastersPage />
+                    </UserManagerPage>
+                    )
               }
             />
             <Route
               path="substations"
               element={
-                <UserManagerPage>
+                isOfflineLocalSingleUserProfile ? (
                   <SubstationsPage />
-                </UserManagerPage>
+                ) : (
+                  <UserManagerPage>
+                    <SubstationsPage />
+                  </UserManagerPage>
+                )
               }
             />
             <Route
@@ -283,39 +338,47 @@ export default function App() {
                 </ModulePage>
               }
             />
-            <Route
-              path="audit"
-              element={
-                <AdminOnlyPage>
-                  <AuditPage />
-                </AdminOnlyPage>
-              }
-            />
+            {!isOfflineLocalSingleUserProfile ? (
+              <Route
+                path="audit"
+                element={
+                  <AdminOnlyPage>
+                    <AuditPage />
+                  </AdminOnlyPage>
+                }
+              />
+            ) : null}
             <Route path="session" element={<SessionPage />} />
-            <Route
-              path="sync-monitor"
-              element={
-                <AdminOnlyPage>
-                  <SyncMonitorPage />
-                </AdminOnlyPage>
-              }
-            />
-            <Route
-              path="architecture"
-              element={
-                <AdminOnlyPage>
-                  <ArchitecturePage />
-                </AdminOnlyPage>
-              }
-            />
-            <Route
-              path="users"
-              element={
-                <UserManagerPage>
-                  <UsersPage />
-                </UserManagerPage>
-              }
-            />
+            {!isOfflineLocalSingleUserProfile ? (
+              <Route
+                path="sync-monitor"
+                element={
+                  <AdminOnlyPage>
+                    <SyncMonitorPage />
+                  </AdminOnlyPage>
+                }
+              />
+            ) : null}
+            {!isOfflineLocalSingleUserProfile ? (
+              <Route
+                path="architecture"
+                element={
+                  <AdminOnlyPage>
+                    <ArchitecturePage />
+                  </AdminOnlyPage>
+                }
+              />
+            ) : null}
+            {!isOfflineLocalSingleUserProfile ? (
+              <Route
+                path="users"
+                element={
+                  <UserManagerPage>
+                    <UsersPage />
+                  </UserManagerPage>
+                }
+              />
+            ) : null}
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

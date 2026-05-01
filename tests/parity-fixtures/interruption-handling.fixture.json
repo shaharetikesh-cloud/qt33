@@ -1,0 +1,18 @@
+{
+  "fixtureId": "interruption-handling",
+  "description": "Interruption overlay merge behavior parity for explicit and auto LS events.",
+  "scenario": {
+    "operationalDate": "2026-04-28",
+    "feederId": "F-11A",
+    "explicitLsOverlayHours": [7, 8, 9, 10],
+    "autoLsOverlayHours": [8, 9, 10, 11]
+  },
+  "expected": {
+    "uniqueMergedSlotKeys": ["F-11A:7", "F-11A:8", "F-11A:9", "F-11A:10", "F-11A:11"],
+    "slotSourcePriority": {
+      "F-11A:8": "explicit",
+      "F-11A:9": "explicit",
+      "F-11A:10": "explicit"
+    }
+  }
+}

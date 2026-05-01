@@ -9,6 +9,8 @@ const PDF_MARGIN_MM = {
   bottom: 12.7, // 0.5 inch
 }
 
+const DEFAULT_RENDER_WIDTH_PX = 1400
+
 async function waitForReportAssets(element) {
   if (document.fonts?.ready) {
     try {
@@ -38,9 +40,13 @@ async function waitForReportAssets(element) {
   await new Promise((resolve) => window.requestAnimationFrame(() => resolve()))
 }
 
-function createRenderSandbox(element) {
+function createRenderSandbox(element, options = {}) {
   const sourceRect = element.getBoundingClientRect()
-  const sandboxWidth = Math.max(Math.ceil(sourceRect.width || 0), 920)
+  const requestedWidth = Number(options.renderWidthPx || 0)
+  const sandboxWidth = Math.max(
+    Math.ceil(sourceRect.width || 0),
+    Number.isFinite(requestedWidth) && requestedWidth > 0 ? requestedWidth : DEFAULT_RENDER_WIDTH_PX,
+  )
   const sandbox = document.createElement('div')
   sandbox.setAttribute('data-report-render-sandbox', 'true')
   sandbox.style.position = 'fixed'
@@ -76,8 +82,8 @@ function createRenderSandbox(element) {
   }
 }
 
-async function renderCanvas(element) {
-  const { clone, cleanup } = createRenderSandbox(element)
+async function renderCanvas(element, options = {}) {
+  const { clone, cleanup } = createRenderSandbox(element, options)
 
   try {
     await waitForReportAssets(clone)
@@ -132,13 +138,21 @@ async function renderCanvas(element) {
   }
 }
 
-function buildPageSlices(totalHeightPx, pageHeightPx, rowAnchors = []) {
+function buildPageSlices(totalHeightPx, pageHeightPx, rowAnchors = [], maxPages = Number.POSITIVE_INFINITY) {
   const slices = []
   let offsetY = 0
   const minSlicePx = Math.floor(pageHeightPx * 0.6)
   const sortedAnchors = [...new Set(rowAnchors)].sort((left, right) => left - right)
 
   while (offsetY < totalHeightPx) {
+    if (slices.length >= maxPages - 1) {
+      slices.push({
+        offsetY,
+        sliceHeightPx: totalHeightPx - offsetY,
+      })
+      break
+    }
+
     const targetBottom = Math.min(offsetY + pageHeightPx, totalHeightPx)
     if (targetBottom >= totalHeightPx) {
       slices.push({
@@ -167,21 +181,7 @@ function buildPageSlices(totalHeightPx, pageHeightPx, rowAnchors = []) {
   return slices
 }
 
-export async function exportElementToPdf(element, options = {}) {
-  if (!element) {
-    throw new Error('Report preview sapadla nahi.')
-  }
-
-  const orientation = options.orientation || 'portrait'
-  const format = options.pageSize || 'a4'
-  const pdf = new jsPDF({
-    orientation,
-    unit: 'mm',
-    format,
-    compress: true,
-  })
-
-  const { canvas, rowAnchors } = await renderCanvas(element)
+function appendCanvasToPdf(pdf, canvas, options = {}) {
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
   const marginLeft = Number(options.marginLeftMm ?? PDF_MARGIN_MM.left)
@@ -190,6 +190,7 @@ export async function exportElementToPdf(element, options = {}) {
   const marginBottom = Number(options.marginBottomMm ?? PDF_MARGIN_MM.bottom)
   const contentWidth = Math.max(pageWidth - marginLeft - marginRight, 10)
   const contentHeight = Math.max(pageHeight - marginTop - marginBottom, 10)
+
   if (options.fitToSinglePage) {
     const imageData = canvas.toDataURL('image/png')
     const ratio = Math.min(contentWidth / canvas.width, contentHeight / canvas.height)
@@ -198,19 +199,15 @@ export async function exportElementToPdf(element, options = {}) {
     const offsetX = marginLeft + (contentWidth - drawWidth) / 2
     const offsetY = marginTop + (contentHeight - drawHeight) / 2
     pdf.addImage(imageData, 'PNG', offsetX, offsetY, drawWidth, drawHeight, undefined, 'FAST')
-    if (options.filename) {
-      pdf.save(options.filename)
-    }
-    return pdf.output('blob')
+    return
   }
 
+  const maxPages = Math.max(1, Number(options.maxPages || Number.POSITIVE_INFINITY))
   const pxPerMm = canvas.width / contentWidth
   const pageHeightPx = Math.max(Math.floor(contentHeight * pxPerMm), 1)
+  const slices = buildPageSlices(canvas.height, pageHeightPx, options.rowAnchors || [], maxPages)
 
   let pageIndex = 0
-
-  const slices = buildPageSlices(canvas.height, pageHeightPx, rowAnchors)
-
   for (const slice of slices) {
     const { offsetY, sliceHeightPx } = slice
     const pageCanvas = document.createElement('canvas')
@@ -218,7 +215,6 @@ export async function exportElementToPdf(element, options = {}) {
     pageCanvas.height = sliceHeightPx
 
     const context = pageCanvas.getContext('2d')
-
     if (!context) {
       throw new Error('PDF page render context available nahi.')
     }
@@ -255,6 +251,67 @@ export async function exportElementToPdf(element, options = {}) {
     )
     pageIndex += 1
   }
+}
+
+export async function exportElementToPdf(element, options = {}) {
+  if (!element) {
+    throw new Error('Report preview sapadla nahi.')
+  }
+
+  const sections = Array.isArray(options.sections) ? options.sections.filter(Boolean) : []
+
+  if (sections.length) {
+    const firstSection = sections[0]
+    const firstOrientation = firstSection.orientation || options.orientation || 'portrait'
+    const firstFormat = firstSection.pageSize || options.pageSize || 'a4'
+    const pdf = new jsPDF({
+      orientation: firstOrientation,
+      unit: 'mm',
+      format: firstFormat,
+      compress: true,
+    })
+
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+      const section = sections[sectionIndex]
+      const sectionElement = section.selector ? element.querySelector(section.selector) : element
+      if (!sectionElement) {
+        continue
+      }
+      const sectionOrientation = section.orientation || options.orientation || 'portrait'
+      const sectionFormat = section.pageSize || options.pageSize || 'a4'
+      if (sectionIndex > 0) {
+        pdf.addPage(sectionFormat, sectionOrientation)
+      }
+      const { canvas, rowAnchors } = await renderCanvas(sectionElement, {
+        renderWidthPx: section.renderWidthPx || options.renderWidthPx,
+      })
+      appendCanvasToPdf(pdf, canvas, {
+        ...options,
+        ...section,
+        rowAnchors,
+      })
+    }
+    if (options.filename) {
+      pdf.save(options.filename)
+    }
+    return pdf.output('blob')
+  }
+
+  const orientation = options.orientation || 'portrait'
+  const format = options.pageSize || 'a4'
+  const pdf = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format,
+    compress: true,
+  })
+  const { canvas, rowAnchors } = await renderCanvas(element, {
+    renderWidthPx: options.renderWidthPx,
+  })
+  appendCanvasToPdf(pdf, canvas, {
+    ...options,
+    rowAnchors,
+  })
 
   if (options.filename) {
     pdf.save(options.filename)

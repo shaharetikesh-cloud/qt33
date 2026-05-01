@@ -41,6 +41,7 @@ import {
   readScope,
   writeScope,
 } from './storageAdapter'
+import { APP_VERSION_NAME } from './appVersion'
 
 const MASTERS_SCOPE = 'masters'
 const SETTINGS_SCOPE = 'settings'
@@ -297,9 +298,15 @@ function filterMasterRecordsByAccess(type, records, profile, masters) {
         .filter(Boolean),
     )
 
-    const filtered = allowedDivisionIds.size
-      ? records.filter((item) => allowedDivisionIds.has(String(item?.id || '').trim()))
-      : []
+    const filtered = records.filter((item) => {
+      const divisionId = String(item?.id || '').trim()
+      const directSubstationId = normalizeRecordSubstationId(item)
+      const matchesByBattery = allowedDivisionIds.has(divisionId)
+      const matchesByDirectSubstation = directSubstationId
+        ? allowedSubstationIds.includes(directSubstationId)
+        : false
+      return matchesByBattery || matchesByDirectSubstation
+    })
     console.info('[access:masters-filter]', {
       type,
       role: normalizeUserRole(profile?.role),
@@ -361,10 +368,22 @@ export async function loadWorkspaceConfiguration(actor) {
 }
 
 export async function saveMasterRecord(type, record, actor) {
+  const actorRole = normalizeUserRole(actor?.role)
+  const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
+  const incomingSubstationId = normalizeRecordSubstationId(record)
+  const scopedRecord =
+    type === 'divisions' && actorRole !== 'super_admin'
+      ? {
+          ...record,
+          substationId: incomingSubstationId || actorSubstationId || '',
+          substation_id: incomingSubstationId || actorSubstationId || '',
+        }
+      : record
+
   if (isLocalSqlMode && isAdminRole(normalizeUserRole(actor?.role))) {
     const savedRecord = await localSaveMasterRecord(type, {
-      ...record,
-      createdBy: record.createdBy || actor?.auth_user_id || actor?.id || '',
+      ...scopedRecord,
+      createdBy: scopedRecord.createdBy || actor?.auth_user_id || actor?.id || '',
     })
 
     const masters = readMasters()
@@ -389,8 +408,8 @@ export async function saveMasterRecord(type, record, actor) {
   const { record: savedRecord, nextCollection } = upsertCollectionRecord(
     collection,
     {
-      ...record,
-      createdBy: record.createdBy || actor?.auth_user_id || actor?.id || '',
+      ...scopedRecord,
+      createdBy: scopedRecord.createdBy || actor?.auth_user_id || actor?.id || '',
     },
     type.slice(0, 3),
   )
@@ -1172,22 +1191,43 @@ export async function loadSessionActivity(actor) {
 }
 
 export async function buildBackupSnapshot(actor) {
+  const deviceInfo = {
+    platform:
+      typeof navigator !== 'undefined'
+        ? navigator.platform || 'unknown'
+        : 'unknown',
+    userAgent:
+      typeof navigator !== 'undefined'
+        ? navigator.userAgent || ''
+        : '',
+  }
+  const exportedAt = getNowIso()
+
+  let payload
   if (isLocalSqlMode && isAdminRole(normalizeUserRole(actor?.role))) {
-    return localExportWorkspaceBackup()
+    payload = await localExportWorkspaceBackup()
+  } else {
+    payload = {
+      masters: readMasters(),
+      settings: readSettings(),
+      userSubstationMappings: readMappings(),
+      attendanceDocuments: readAttendanceDocuments(),
+      dlrRecords: readDlrRecords(),
+      reportSnapshots: readReportSnapshots(),
+      notices: readNotices(),
+      feedbackEntries: readFeedbackEntries(),
+      auditEvents: readAuditEvents(),
+      referenceCache: readReferenceCache(),
+    }
   }
 
   return {
-    exportedAt: getNowIso(),
-    masters: readMasters(),
-    settings: readSettings(),
-    userSubstationMappings: readMappings(),
-    attendanceDocuments: readAttendanceDocuments(),
-    dlrRecords: readDlrRecords(),
-    reportSnapshots: readReportSnapshots(),
-    notices: readNotices(),
-    feedbackEntries: readFeedbackEntries(),
-    auditEvents: readAuditEvents(),
-    referenceCache: readReferenceCache(),
+    backupVersion: '2',
+    appVersion: APP_VERSION_NAME,
+    created_at: exportedAt,
+    exportedAt,
+    deviceInfo,
+    snapshotPayload: payload,
   }
 }
 
@@ -1196,8 +1236,13 @@ export async function importBackupSnapshot(snapshot, actor) {
     throw new Error('Backup file valid nahi.')
   }
 
+  const payload =
+    snapshot?.snapshotPayload && typeof snapshot.snapshotPayload === 'object'
+      ? snapshot.snapshotPayload
+      : snapshot
+
   if (isLocalSqlMode && isAdminRole(normalizeUserRole(actor?.role))) {
-    await localImportWorkspaceBackup(snapshot)
+    await localImportWorkspaceBackup(payload)
     await loadWorkspaceConfiguration(actor)
     const referenceData = await loadReferenceData(actor)
     writeReferenceCache({
@@ -1205,35 +1250,36 @@ export async function importBackupSnapshot(snapshot, actor) {
       employees: referenceData.employees,
       updatedAt: getNowIso(),
     })
-    writeMappings(snapshot.userSubstationMappings || [])
-    writeAttendanceDocuments(snapshot.attendanceDocuments || [])
-    writeDlrRecords(snapshot.dlrRecords || [])
-    writeReportSnapshots(snapshot.reportSnapshots || [])
-    writeNotices(snapshot.notices || [])
-    writeFeedbackEntries(snapshot.feedbackEntries || [])
-    writeAuditEvents(snapshot.auditEvents || [])
+    writeMappings(payload.userSubstationMappings || [])
+    writeAttendanceDocuments(payload.attendanceDocuments || [])
+    writeDlrRecords(payload.dlrRecords || [])
+    writeReportSnapshots(payload.reportSnapshots || [])
+    writeNotices(payload.notices || [])
+    writeFeedbackEntries(payload.feedbackEntries || [])
+    writeAuditEvents(payload.auditEvents || [])
     recordAuditEvent('backup_imported', actor, {
       exportedAt: snapshot.exportedAt || '',
+      backupVersion: snapshot.backupVersion || 'legacy',
     })
     return
   }
 
   writeMasters({
     ...cloneValue(defaultMasterCollections),
-    ...(snapshot.masters || {}),
+    ...(payload.masters || {}),
   })
   writeSettings({
     ...cloneValue(defaultSettings),
-    ...(snapshot.settings || {}),
+    ...(payload.settings || {}),
   })
-  writeMappings(snapshot.userSubstationMappings || [])
-  writeAttendanceDocuments(snapshot.attendanceDocuments || [])
-  writeDlrRecords(snapshot.dlrRecords || [])
-  writeReportSnapshots(snapshot.reportSnapshots || [])
-  writeNotices(snapshot.notices || [])
-  writeFeedbackEntries(snapshot.feedbackEntries || [])
-  writeAuditEvents(snapshot.auditEvents || [])
-  writeReferenceCache(snapshot.referenceCache || {
+  writeMappings(payload.userSubstationMappings || [])
+  writeAttendanceDocuments(payload.attendanceDocuments || [])
+  writeDlrRecords(payload.dlrRecords || [])
+  writeReportSnapshots(payload.reportSnapshots || [])
+  writeNotices(payload.notices || [])
+  writeFeedbackEntries(payload.feedbackEntries || [])
+  writeAuditEvents(payload.auditEvents || [])
+  writeReferenceCache(payload.referenceCache || {
     substations: [],
     employees: [],
     updatedAt: '',
@@ -1241,5 +1287,7 @@ export async function importBackupSnapshot(snapshot, actor) {
 
   recordAuditEvent('backup_imported', actor, {
     exportedAt: snapshot.exportedAt || '',
+    backupVersion: snapshot.backupVersion || 'legacy',
+    importedAt: getNowIso(),
   })
 }

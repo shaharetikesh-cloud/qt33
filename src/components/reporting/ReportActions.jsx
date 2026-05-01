@@ -1,7 +1,15 @@
 import { Capacitor } from '@capacitor/core'
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { exportCsv, exportJson, exportWorkbook } from '../../lib/exportUtils'
+import { Toast } from '@capacitor/toast'
+import {
+  buildCsvBlob,
+  buildJsonBlob,
+  buildWorkbookBlob,
+  exportCsv,
+  exportJson,
+  exportWorkbook,
+} from '../../lib/exportUtils'
 import { exportElementToPdf } from '../../lib/reportPdf'
 import {
   openBlobInNewTab,
@@ -18,21 +26,40 @@ export default function ReportActions({
   orientation = 'portrait',
   pageSize = 'a4',
   fitToSinglePage = false,
+  maxPages = 2,
+  renderWidthPx = 1400,
+  pdfSections = null,
   jsonData,
   csvRows,
   workbookSheets,
 }) {
   const { profile } = useAuth()
   const [busyAction, setBusyAction] = useState('')
+  const [statusMessage, setStatusMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
   const nativePlatform = Capacitor.isNativePlatform()
 
   async function runAsyncAction(label, action) {
     try {
       setBusyAction(label)
+      setErrorMessage('')
       await action()
+    } catch (error) {
+      setErrorMessage(error?.message || 'Action failed.')
+      throw error
     } finally {
       setBusyAction('')
     }
+  }
+
+  async function notifyNative(message) {
+    if (!nativePlatform) {
+      return
+    }
+    await Toast.show({
+      text: message,
+      duration: 'short',
+    })
   }
 
   async function recordSnapshot(exportType) {
@@ -58,6 +85,9 @@ export default function ReportActions({
       orientation,
       pageSize,
       fitToSinglePage,
+      maxPages,
+      renderWidthPx,
+      sections: pdfSections,
       ...options,
     })
   }
@@ -68,9 +98,12 @@ export default function ReportActions({
 
       if (nativePlatform) {
         const uri = await saveBlobToDevice(blob, `${filenameBase}.pdf`)
-        window.open(uri, '_blank')
+        await shareFileUri(uri, `${filenameBase}.pdf`, `${filenameBase} (Preview)`)
+        setStatusMessage('PDF ready to share.')
+        await notifyNative('PDF ready to share.')
       } else {
         openBlobInNewTab(blob)
+        setStatusMessage('PDF preview opened.')
       }
 
       await recordSnapshot('preview_pdf')
@@ -80,7 +113,13 @@ export default function ReportActions({
   async function handlePdf() {
     await runAsyncAction('pdf', async () => {
       const blob = await buildPdfBlob()
-      await saveBlobToDevice(blob, `${filenameBase}.pdf`)
+      const savedUri = await saveBlobToDevice(blob, `${filenameBase}.pdf`)
+      if (nativePlatform) {
+        setStatusMessage(`PDF saved: ${savedUri}`)
+        await notifyNative('PDF saved')
+      } else {
+        setStatusMessage('PDF downloaded.')
+      }
       await recordSnapshot('save_pdf')
     })
   }
@@ -91,8 +130,11 @@ export default function ReportActions({
       if (nativePlatform) {
         const uri = await saveBlobToDevice(blob, `${filenameBase}.pdf`)
         await shareFileUri(uri, `${filenameBase}.pdf`, `${filenameBase} (Print)`)
+        setStatusMessage('PDF ready to share.')
+        await notifyNative('PDF ready to share.')
       } else {
         printBlobInBrowser(blob)
+        setStatusMessage('Print dialog opened.')
       }
 
       await recordSnapshot('print_pdf')
@@ -103,7 +145,57 @@ export default function ReportActions({
     await runAsyncAction('share', async () => {
       const blob = await buildPdfBlob()
       await shareBlob(blob, `${filenameBase}.pdf`, filenameBase)
+      setStatusMessage('PDF ready to share.')
+      await notifyNative('PDF ready to share.')
       await recordSnapshot('share_pdf')
+    })
+  }
+
+  async function handleJsonExport() {
+    await runAsyncAction('json', async () => {
+      if (nativePlatform) {
+        const blob = buildJsonBlob(jsonData)
+        const uri = await saveBlobToDevice(blob, `${filenameBase}.json`)
+        await shareFileUri(uri, `${filenameBase}.json`, `${filenameBase} JSON`)
+        setStatusMessage('JSON saved and ready to share.')
+        await notifyNative('JSON saved')
+      } else {
+        exportJson(jsonData, `${filenameBase}.json`)
+        setStatusMessage('JSON downloaded.')
+      }
+      await recordSnapshot('json')
+    })
+  }
+
+  async function handleCsvExport() {
+    await runAsyncAction('csv', async () => {
+      if (nativePlatform) {
+        const blob = buildCsvBlob(csvRows)
+        const uri = await saveBlobToDevice(blob, `${filenameBase}.csv`)
+        await shareFileUri(uri, `${filenameBase}.csv`, `${filenameBase} CSV`)
+        setStatusMessage('CSV saved and ready to share.')
+        await notifyNative('CSV saved')
+      } else {
+        exportCsv(csvRows, `${filenameBase}.csv`)
+        setStatusMessage('CSV downloaded.')
+      }
+      await recordSnapshot('csv')
+    })
+  }
+
+  async function handleExcelExport() {
+    await runAsyncAction('excel', async () => {
+      if (nativePlatform) {
+        const blob = buildWorkbookBlob(workbookSheets)
+        const uri = await saveBlobToDevice(blob, `${filenameBase}.xlsx`)
+        await shareFileUri(uri, `${filenameBase}.xlsx`, `${filenameBase} Excel`)
+        setStatusMessage('Excel saved and ready to share.')
+        await notifyNative('Excel saved')
+      } else {
+        exportWorkbook(workbookSheets, `${filenameBase}.xlsx`)
+        setStatusMessage('Excel downloaded.')
+      }
+      await recordSnapshot('excel')
     })
   }
 
@@ -155,35 +247,31 @@ export default function ReportActions({
         type="button"
         className="ghost-light-button"
         data-report-action="export-json"
-        onClick={() => {
-          exportJson(jsonData, `${filenameBase}.json`)
-          void recordSnapshot('json')
-        }}
+        onClick={() => void handleJsonExport()}
+        disabled={busyAction === 'json'}
       >
-        JSON
+        {busyAction === 'json' ? 'Preparing...' : 'JSON'}
       </button>
       <button
         type="button"
         className="ghost-light-button"
         data-report-action="export-csv"
-        onClick={() => {
-          exportCsv(csvRows, `${filenameBase}.csv`)
-          void recordSnapshot('csv')
-        }}
+        onClick={() => void handleCsvExport()}
+        disabled={busyAction === 'csv'}
       >
-        CSV
+        {busyAction === 'csv' ? 'Preparing...' : 'CSV'}
       </button>
       <button
         type="button"
         className="ghost-light-button"
         data-report-action="export-excel"
-        onClick={() => {
-          exportWorkbook(workbookSheets, `${filenameBase}.xlsx`)
-          void recordSnapshot('excel')
-        }}
+        onClick={() => void handleExcelExport()}
+        disabled={busyAction === 'excel'}
       >
-        Excel
+        {busyAction === 'excel' ? 'Preparing...' : 'Excel'}
       </button>
+      {statusMessage ? <span className="muted-copy">{statusMessage}</span> : null}
+      {errorMessage ? <span className="text-danger">{errorMessage}</span> : null}
     </div>
   )
 }

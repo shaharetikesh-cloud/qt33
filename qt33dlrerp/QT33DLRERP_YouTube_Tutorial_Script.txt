@@ -1,0 +1,148 @@
+QT33 DLR ERP - YouTube Tutorial Script (Ready to Speak)
+========================================================
+
+Video Title Suggestion:
+QT33 DLR ERP Complete Training | Signup to Daily Data Entry | Multi-Device Sync
+
+Estimated Duration:
+18 to 25 minutes
+
+------------------------------------------------------------
+1) Opening Hook (0:00 - 0:30)
+------------------------------------------------------------
+Namaskar mitranno. Ya video madhe apan QT33 DLR ERP app cha complete practical tutorial baghnar aahot.
+Signup pasun login, role-based access, daily log, battery, faults, maintenance, charge handover,
+history register ani multi-device sync paryant sagle step-by-step cover karu.
+
+------------------------------------------------------------
+2) What this project does (0:30 - 1:30)
+------------------------------------------------------------
+He app substation operations digital karte:
+- Daily operational chart entry
+- Battery maintenance records
+- Fault and maintenance registers
+- Charge handover
+- History and reporting
+
+Backend stack:
+- Firebase Authentication for login security
+- Supabase cloud backend for shared data
+- Local cache + sync engine for stable field usage
+
+------------------------------------------------------------
+3) Signup + Login Flow (1:30 - 4:00)
+------------------------------------------------------------
+Step 1: Login page open kara.
+Step 2: Sign Up option var click kara.
+Step 3: Full Name, Email, Password fill kara.
+Step 4: Account create kara.
+Step 5: Email verification complete kara.
+Step 6: Login kara.
+
+Screen note:
+Jar account activation required asel tar admin approval lagel.
+
+------------------------------------------------------------
+4) Dashboard and Navigation (4:00 - 6:00)
+------------------------------------------------------------
+Ata dashboard var overview cards disatil.
+Sidebar madhun modules access hotil:
+- Daily Log
+- Battery
+- Faults
+- Maintenance
+- Charge Handover
+- History Register
+
+Header madhla important part:
+- Sync status
+- Sync now button
+- Selected substation
+
+------------------------------------------------------------
+5) Daily Log Entry Demo (6:00 - 10:00)
+------------------------------------------------------------
+Step 1: Daily Log open kara.
+Step 2: Date ani Substation select kara.
+Step 3: Hour-wise feeder readings enter kara.
+Step 4: Jar interruption asel tar add interruption.
+Step 5: Meter replacement asel tar meter change add kara.
+Step 6: Save Data var click kara.
+Step 7: Day complete asel tar Finalize Day kara.
+Step 8: Header madhun Sync now kara.
+
+Important line बोलायची:
+"Save kelelya data cloud la push zalyashivay dusrya device la disat nahi, mhanun Sync now compulsory aahe."
+
+------------------------------------------------------------
+6) Battery Module Demo (10:00 - 12:00)
+------------------------------------------------------------
+Step 1: Battery page open kara.
+Step 2: Date, Substation, Battery Set select kara.
+Step 3: SG, Voltage, condition/checklist fill kara.
+Step 4: Save kara.
+Step 5: Sync now kara.
+
+------------------------------------------------------------
+7) Fault / Maintenance / Charge Handover (12:00 - 15:00)
+------------------------------------------------------------
+Fault:
+- From-To time, feeder, fault type, cause save kara.
+
+Maintenance:
+- Activity details and status save kara.
+
+Charge Handover:
+- outgoing and incoming shift/operator details save kara.
+
+Pratyek module nantar:
+- Save
+- Sync now
+
+------------------------------------------------------------
+8) History Register + Filters (15:00 - 16:30)
+------------------------------------------------------------
+History page var filters use kara:
+- Date range
+- Substation
+- Type
+- Status
+- Feeder
+
+Filter wrong asel tar data save asun pan disat nahi. He audience la naki सांगा.
+
+------------------------------------------------------------
+9) Multi-Device Sync Practical (16:30 - 19:00)
+------------------------------------------------------------
+Demo pattern:
+1. Device 1 var record save kara.
+2. Device 1 var Sync now.
+3. Device 2 var Sync now.
+4. Device 2 var same module/date/substation open kara.
+
+Jar data disat nasel:
+- Filter check kara
+- Role/substation access check kara
+- Page reload kara
+
+------------------------------------------------------------
+10) Common Problems and Quick Fix (19:00 - 21:00)
+------------------------------------------------------------
+Problem: Data saved but not visible
+Fix: Date + substation + module filter check + both side sync
+
+Problem: Dashboard count mismatch
+Fix: Module page open karun reload kara, dashboard summary slightly delayed asu shakto
+
+Problem: Refresh nantar page change hoto
+Fix: Auth settle honyasathi 2-3 sec dya, mag route retain hota
+
+------------------------------------------------------------
+11) Closing CTA (21:00 - end)
+------------------------------------------------------------
+Jar video upyogi vatla tar like kara, share kara, ani channel subscribe kara.
+Specific module bug asel tar exact steps, screenshot, ani module/date details sah feedback pathva.
+Support email: qt33dlrerp@gmail.com
+
+Dhanyavaad.
+

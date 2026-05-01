@@ -1,0 +1,63 @@
+{
+  "snapshotVersion": "phase0-v1",
+  "description": "Expected parity outputs used as baseline before offline APK conversion.",
+  "snapshots": {
+    "dailyLogHourly": {
+      "fixtureFile": "daily-log-hourly.fixture.json",
+      "expectedRowsCount": 25,
+      "expectedFirstHour": "00:00",
+      "expectedLastHour": "24:00"
+    },
+    "lsSlotMapping": {
+      "fixtureFile": "ls-slot-mapping.fixture.json",
+      "expectedCaseCount": 3,
+      "expectedCaseIds": [
+        "case-0600-1000-exclude-start",
+        "case-0600-1000-include-start",
+        "case-2200-2400-exclude-start"
+      ]
+    },
+    "interruptionHandling": {
+      "fixtureFile": "interruption-handling.fixture.json",
+      "expectedMergedUniqueCount": 5,
+      "expectedPriorityAtKey": {
+        "key": "F-11A:8",
+        "source": "explicit"
+      }
+    },
+    "maintenanceLinking": {
+      "fixtureFile": "maintenance-history-linking.fixture.json",
+      "expectedFeederEntryCount": 1,
+      "expectedAssetEntryCount": 1
+    },
+    "feederAccountSummary": {
+      "fixtureFile": "feeder-account-summary.fixture.json",
+      "expectedMaintenanceCount": 2,
+      "expectedTotalDurationMinutes": 70
+    },
+    "assetAccountSummary": {
+      "fixtureFile": "asset-account-summary.fixture.json",
+      "expectedMaintenanceCount": 2,
+      "expectedPartChangeCount": 1
+    },
+    "reportTotals": {
+      "fixtureFile": "report-totals.fixture.json",
+      "expectedTotalVoltage": 6.6,
+      "expectedOverallCondition": "Good"
+    },
+    "pdfValues": {
+      "fixtureFile": "pdf-values.fixture.json",
+      "requiredKeys": [
+        "division",
+        "substationName",
+        "batterySetName",
+        "weekLabel",
+        "totalVoltage",
+        "overallCondition",
+        "operatorName",
+        "inChargeName",
+        "remark"
+      ]
+    }
+  }
+}

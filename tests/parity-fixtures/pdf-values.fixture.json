@@ -1,0 +1,16 @@
+{
+  "fixtureId": "pdf-values",
+  "description": "PDF parity fixture for value-level correctness independent of visual skin.",
+  "module": "battery",
+  "expectedRenderValues": {
+    "division": "Selu",
+    "substationName": "33/11 Kv Sub-Station Sawangi Mha",
+    "batterySetName": "Battery Set",
+    "weekLabel": "19/04/2026 to 25/04/2026",
+    "totalVoltage": 33.0,
+    "overallCondition": "Good",
+    "operatorName": "Tikaram",
+    "inChargeName": "Tikaram",
+    "remark": "All cells are within the expected weekly maintenance range."
+  }
+}

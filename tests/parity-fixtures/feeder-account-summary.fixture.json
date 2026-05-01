@@ -1,0 +1,28 @@
+{
+  "fixtureId": "feeder-account-summary",
+  "description": "Feeder account summary parity fixture derived from maintenance entries.",
+  "filters": {
+    "fromDate": "2026-04-01",
+    "toDate": "2026-04-30",
+    "feederId": "FD-01"
+  },
+  "rows": [
+    {
+      "entryId": "MNT-001",
+      "operationalDate": "2026-04-28",
+      "durationMinutes": 40,
+      "maintenanceType": "Preventive"
+    },
+    {
+      "entryId": "MNT-002",
+      "operationalDate": "2026-04-29",
+      "durationMinutes": 30,
+      "maintenanceType": "Breakdown"
+    }
+  ],
+  "expectedSummary": {
+    "maintenanceCount": 2,
+    "totalDurationMinutes": 70,
+    "lastMaintenanceDate": "2026-04-29"
+  }
+}

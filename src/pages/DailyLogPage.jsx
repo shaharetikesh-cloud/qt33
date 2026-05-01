@@ -1715,6 +1715,31 @@ export default function DailyLogPage() {
             filenameBase={`daily-log-${form.operationalDate}-${substation?.name || 'substation'}`}
             orientation={report.orientation}
             pageSize={report.pageSize}
+            renderWidthPx={1800}
+            pdfSections={[
+              {
+                selector: '[data-pdf-section="daily-log-main"]',
+                pageSize: 'legal',
+                orientation: 'landscape',
+                fitToSinglePage: true,
+                marginLeftMm: 8,
+                marginRightMm: 8,
+                marginTopMm: 8,
+                marginBottomMm: 8,
+                renderWidthPx: 2200,
+              },
+              {
+                selector: '[data-pdf-section="daily-log-interruptions"]',
+                pageSize: 'legal',
+                orientation: 'landscape',
+                maxPages: 1,
+                marginLeftMm: 10,
+                marginRightMm: 10,
+                marginTopMm: 10,
+                marginBottomMm: 10,
+                renderWidthPx: 1600,
+              },
+            ]}
             jsonData={report}
             csvRows={report.exportRows}
             workbookSheets={report.workbookSheets}
@@ -1743,6 +1768,8 @@ export default function DailyLogPage() {
           filenameBase={`daily-analysis-${form.operationalDate}-${substation?.name || 'substation'}`}
           orientation={analyticsReport.orientation}
           pageSize={analyticsReport.pageSize}
+          maxPages={2}
+          renderWidthPx={1500}
           jsonData={analyticsReport}
           csvRows={analyticsReport.csvRows}
           workbookSheets={analyticsReport.workbookSheets}

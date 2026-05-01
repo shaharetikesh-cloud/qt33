@@ -16,7 +16,14 @@ function getEnvValue(key) {
   return String(import.meta.env[key] || '').trim()
 }
 
+function isOfflineSingleUserProfile() {
+  return String(import.meta.env.VITE_RUNTIME_PROFILE || '').trim().toLowerCase() === 'offline-local-single-user'
+}
+
 export function getMissingEnvKeys(group) {
+  if (isOfflineSingleUserProfile()) {
+    return []
+  }
   const keys = REQUIRED_ENV[group] || []
   return keys.filter((key) => !getEnvValue(key))
 }

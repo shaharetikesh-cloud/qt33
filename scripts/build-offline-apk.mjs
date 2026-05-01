@@ -22,13 +22,7 @@ const offlineApkPath = path.join(
   'unified-msedcl-offline-debug.apk',
 )
 const allowedMasterTypes = ['divisions', 'feeders', 'batterySets', 'transformers']
-const javaCompatibilityFiles = [
-  path.join(rootDir, 'node_modules', '@capacitor', 'android', 'capacitor', 'build.gradle'),
-  path.join(rootDir, 'node_modules', '@capacitor', 'filesystem', 'android', 'build.gradle'),
-  path.join(rootDir, 'node_modules', '@capacitor', 'share', 'android', 'build.gradle'),
-  path.join(androidDir, 'app', 'capacitor.build.gradle'),
-  path.join(androidDir, 'capacitor-cordova-android-plugins', 'build.gradle'),
-]
+const javaCompatibilityFiles = []
 
 function parseJson(value, fallback = {}) {
   try {

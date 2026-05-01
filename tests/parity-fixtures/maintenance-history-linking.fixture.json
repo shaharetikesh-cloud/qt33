@@ -1,0 +1,33 @@
+{
+  "fixtureId": "maintenance-history-linking",
+  "description": "Maintenance source-of-truth parity: feeder and asset account views derive from maintenance entries.",
+  "masters": {
+    "feeders": [
+      { "id": "FD-01", "name": "Feeder A", "substationId": "SS-01" }
+    ],
+    "assets": [
+      { "id": "AS-01", "name": "Transformer A", "feederId": "FD-01", "substationId": "SS-01" }
+    ]
+  },
+  "maintenanceEntries": [
+    {
+      "id": "MNT-001",
+      "operationalDate": "2026-04-28",
+      "substationId": "SS-01",
+      "payload": {
+        "feederId": "FD-01",
+        "assetId": "AS-01",
+        "maintenanceType": "Preventive",
+        "durationMinutes": 40,
+        "partChanged": true,
+        "partName": "Relay Kit",
+        "remark": "Routine replacement"
+      }
+    }
+  ],
+  "expected": {
+    "feederAccountContainsEntryIds": ["MNT-001"],
+    "assetAccountContainsEntryIds": ["MNT-001"],
+    "resolvedFeederIdForAssetEntry": "FD-01"
+  }
+}

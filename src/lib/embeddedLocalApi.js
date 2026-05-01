@@ -34,6 +34,42 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function withRecordMeta(record = {}, options = {}) {
+  const timestamp = nowIso()
+  const createdAt = String(record.created_at || record.createdAt || timestamp).trim()
+  const updatedAt = String(options.updatedAt || timestamp).trim()
+  const version = Number.isFinite(Number(record.version))
+    ? Number(record.version)
+    : Number.isFinite(Number(record.meta?.version))
+      ? Number(record.meta.version)
+      : 1
+  const nextVersion = options.bumpVersion ? version + 1 : Math.max(1, version)
+  const backupTimestamp = String(
+    options.backupTimestamp ||
+      record.backup_timestamp ||
+      record.backupTimestamp ||
+      record.meta?.backupTimestamp ||
+      '',
+  ).trim()
+
+  return {
+    ...record,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    version: nextVersion,
+    deleted: Boolean(record.deleted),
+    backup_timestamp: backupTimestamp,
+    meta: {
+      localUuid: String(record.id || crypto.randomUUID()),
+      createdAt,
+      updatedAt,
+      deleted: Boolean(record.deleted),
+      version: nextVersion,
+      backupTimestamp: backupTimestamp,
+    },
+  }
+}
+
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value))
 }
@@ -62,6 +98,12 @@ function getInitialDatabase() {
     notices: [],
     feedback_entries: [],
     user_substation_mappings: [],
+    backup_metadata: {
+      last_exported_at: '',
+      last_imported_at: '',
+      last_restore_at: '',
+      app_version: '1',
+    },
   }
 }
 
@@ -2087,7 +2129,7 @@ export async function embeddedApiRequest(path, options = {}) {
       throw new Error('Substation code already exists.')
     }
 
-    const record = {
+    const record = withRecordMeta({
       id: crypto.randomUUID(),
       code,
       name,
@@ -2101,9 +2143,9 @@ export async function embeddedApiRequest(path, options = {}) {
       },
       is_active: body.is_active === false ? false : true,
       created_by: user.id,
-      created_at: nowIso(),
-      updated_at: nowIso(),
-    }
+    }, {
+      updatedAt: nowIso(),
+    })
     database.substations.push(record)
     await persistDatabase(database)
     return {
@@ -2162,7 +2204,7 @@ export async function embeddedApiRequest(path, options = {}) {
     }
 
     const timestamp = nowIso()
-    const record = {
+    const record = withRecordMeta({
       id: crypto.randomUUID(),
       owner_user_id: user.id,
       substation_id: payload.substationId,
@@ -2173,7 +2215,7 @@ export async function embeddedApiRequest(path, options = {}) {
       metadata: payload.metadata,
       created_at: timestamp,
       updated_at: timestamp,
-    }
+    })
     database.employees.push(record)
     await persistDatabase(database)
     return {
@@ -2299,7 +2341,7 @@ export async function embeddedApiRequest(path, options = {}) {
       existing.month_key = monthKey
       existing.employee_scope = String(document.employeeScope || existing.employee_scope || '').trim()
       existing.payload = payload
-      existing.updated_at = timestamp
+      Object.assign(existing, withRecordMeta(existing, { updatedAt: timestamp, bumpVersion: true }))
     } else {
       database.attendance_sheets.unshift({
         id: recordId,
@@ -2311,6 +2353,9 @@ export async function embeddedApiRequest(path, options = {}) {
         payload,
         created_at: timestamp,
         updated_at: timestamp,
+      })
+      database.attendance_sheets[0] = withRecordMeta(database.attendance_sheets[0], {
+        updatedAt: timestamp,
       })
     }
 
@@ -2407,7 +2452,7 @@ export async function embeddedApiRequest(path, options = {}) {
       existing.record_key = recordKey
       existing.operational_date = operationalDate
       existing.payload = payload
-      existing.updated_at = timestamp
+      Object.assign(existing, withRecordMeta(existing, { updatedAt: timestamp, bumpVersion: true }))
     } else {
       database.dlr_records.unshift({
         id: recordId,
@@ -2419,6 +2464,9 @@ export async function embeddedApiRequest(path, options = {}) {
         payload,
         created_at: timestamp,
         updated_at: timestamp,
+      })
+      database.dlr_records[0] = withRecordMeta(database.dlr_records[0], {
+        updatedAt: timestamp,
       })
     }
 
@@ -2522,7 +2570,7 @@ export async function embeddedApiRequest(path, options = {}) {
       existing.substation_label = String(snapshot.substationLabel || '').trim()
       existing.month_label = String(snapshot.monthLabel || '').trim()
       existing.metadata = metadata
-      existing.updated_at = timestamp
+      Object.assign(existing, withRecordMeta(existing, { updatedAt: timestamp, bumpVersion: true }))
     } else {
       database.report_snapshots.unshift({
         id: snapshotId,
@@ -2538,6 +2586,9 @@ export async function embeddedApiRequest(path, options = {}) {
         metadata,
         created_at: timestamp,
         updated_at: timestamp,
+      })
+      database.report_snapshots[0] = withRecordMeta(database.report_snapshots[0], {
+        updatedAt: timestamp,
       })
     }
 
@@ -2598,7 +2649,7 @@ export async function embeddedApiRequest(path, options = {}) {
       existing.status = String(body.status || 'active').trim()
       existing.publish_from = String(body.publishFrom || '').trim()
       existing.publish_to = String(body.publishTo || '').trim()
-      existing.updated_at = timestamp
+      Object.assign(existing, withRecordMeta(existing, { updatedAt: timestamp, bumpVersion: true }))
     } else {
       database.notices.unshift({
         id: noticeId,
@@ -2612,6 +2663,9 @@ export async function embeddedApiRequest(path, options = {}) {
         publish_to: String(body.publishTo || '').trim(),
         created_at: timestamp,
         updated_at: timestamp,
+      })
+      database.notices[0] = withRecordMeta(database.notices[0], {
+        updatedAt: timestamp,
       })
     }
 
@@ -2674,7 +2728,7 @@ export async function embeddedApiRequest(path, options = {}) {
       throw new Error('Ya substation sathi feedback submit access nahi.')
     }
 
-    const entry = {
+    const entry = withRecordMeta({
       id: crypto.randomUUID(),
       owner_user_id: user.id,
       substation_id: substationId,
@@ -2687,7 +2741,7 @@ export async function embeddedApiRequest(path, options = {}) {
       resolution_note: '',
       created_at: nowIso(),
       updated_at: nowIso(),
-    }
+    })
     database.feedback_entries.unshift(entry)
     appAudit(database, 'feedback_created', user, {
       feedbackId: entry.id,
@@ -2733,7 +2787,7 @@ export async function embeddedApiRequest(path, options = {}) {
     existing.resolution_note = adminUser
       ? String(body.resolutionNote || existing.resolution_note || '').trim()
       : existing.resolution_note
-    existing.updated_at = nowIso()
+    Object.assign(existing, withRecordMeta(existing, { updatedAt: nowIso(), bumpVersion: true }))
 
     appAudit(database, 'feedback_updated', user, {
       feedbackId: existing.id,
@@ -2845,9 +2899,17 @@ export async function embeddedApiRequest(path, options = {}) {
       throw new Error('Main admin access required aahe.')
     }
 
+    const exportTimestamp = nowIso()
+    database.backup_metadata = {
+      ...(database.backup_metadata || {}),
+      last_exported_at: exportTimestamp,
+    }
+    await persistDatabase(database)
+
     return {
       snapshot: {
-        exportedAt: nowIso(),
+        exportedAt: exportTimestamp,
+        backupMetadata: cloneValue(database.backup_metadata || {}),
         users: database.users.map((item) => ({
           ...mapUserRow(database, item),
           passwordHash: item.password_hash,
@@ -2903,6 +2965,14 @@ export async function embeddedApiRequest(path, options = {}) {
     await applySeedSnapshot(database, snapshot, 'workspace-backup-import', {
       resetSessions: false,
     })
+    database.backup_metadata = {
+      ...(database.backup_metadata || {}),
+      ...(snapshot.backupMetadata && typeof snapshot.backupMetadata === 'object'
+        ? snapshot.backupMetadata
+        : {}),
+      last_imported_at: nowIso(),
+      last_restore_at: nowIso(),
+    }
     appAudit(database, 'workspace_backup_imported_server', user, {
       exportedAt: snapshot.exportedAt || '',
     })

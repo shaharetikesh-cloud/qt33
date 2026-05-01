@@ -1,0 +1,10 @@
+{
+  "continue.models": [
+    {
+      "title": "Ollama",
+      "provider": "ollama",
+      "model": "llama2" // किंवा आपल्या आवडीचे मॉडेल
+    }
+  ],
+  "continue.allowAnonymousTelemetry": false
+}

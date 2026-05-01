@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "attendanceSheets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "substationId", "order": "ASCENDING"},
+        {"fieldPath": "year", "order": "DESCENDING"},
+        {"fieldPath": "month", "order": "DESCENDING"}
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

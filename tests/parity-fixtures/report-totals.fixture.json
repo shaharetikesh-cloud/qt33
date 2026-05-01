@@ -1,0 +1,20 @@
+{
+  "fixtureId": "report-totals",
+  "description": "Cross-module report totals parity fixture.",
+  "reportInputs": {
+    "module": "battery",
+    "operationalDate": "2026-04-28",
+    "substationId": "SS-01",
+    "cells": [
+      { "specificGravity": 1200, "voltage": 2.2 },
+      { "specificGravity": 1200, "voltage": 2.2 },
+      { "specificGravity": 1200, "voltage": 2.2 }
+    ]
+  },
+  "expectedTotals": {
+    "totalVoltage": 6.6,
+    "maxSpecificGravity": 1200,
+    "minSpecificGravity": 1200,
+    "overallCondition": "Good"
+  }
+}

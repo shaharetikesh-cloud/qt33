@@ -1,7 +1,7 @@
 {
   "name": "unified_msedcl_workspace",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "guard:web": "node scripts/ensure-project-root.mjs web-connected-canonical",
@@ -9,6 +9,7 @@
     "dev:web": "vite",
     "server:local": "npm run guard:web && node --env-file=.env server/index.js",
     "build": "npm run guard:web && vite build",
+    "build:connected": "npm run guard:web && vite build --mode connected",
     "build:offline": "npm run guard:web && vite build --mode offline",
     "migrate:legacy:erp": "node scripts/migrate-legacy-to-erp-records.mjs",
     "lint": "eslint .",
@@ -26,7 +27,9 @@
     "android:aab:release": "npm run build && npm run android:sync && cd android && gradlew.bat bundleRelease",
     "android:aab:release:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/bundle/release/app-release.aab'\"",
     "android:apk:offline": "node scripts/build-offline-apk.mjs",
-    "android:apk:offline:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/apk/debug/unified-msedcl-offline-debug.apk'\""
+    "android:apk:offline:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/apk/debug/unified-msedcl-offline-debug.apk'\"",
+    "android:apk:connected": "node scripts/build-connected-apk.mjs",
+    "android:apk:connected:path": "powershell -NoProfile -Command \"Resolve-Path 'android/app/build/outputs/apk/debug/unified-msedcl-connected-debug.apk'\""
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",

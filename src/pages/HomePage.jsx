@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { localGetDashboardSummary, localTrackVisitor } from '../lib/localApi'
 import AppIcon from '../components/ui/AppIcon'
-import { isLocalSqlMode } from '../lib/runtimeConfig'
+import { isLocalSqlMode, isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
 import {
   listDlrRecords,
   loadDlrRecords,
@@ -72,6 +72,8 @@ export default function HomePage() {
   const dashboardSubtitle = isMainAdmin
     ? 'User management, audit, and cross-substation visibility are active in this workspace.'
     : 'Operational records are automatically filtered to your assigned substation at backend level.'
+  const offlineTitle = 'Dashboard'
+  const offlineSubtitle = 'All records are saved on this device.'
   const canViewDailyLog = canViewModule('daily_log')
   const canViewFaults = canViewModule('faults')
   const canViewReports = canViewModule('reports')
@@ -183,9 +185,9 @@ export default function HomePage() {
       <section className="dashboard-banner">
         <div>
           <p className="eyebrow">Workspace Overview</p>
-          <h2>{dashboardTitle}</h2>
+          <h2>{isOfflineLocalSingleUserProfile ? offlineTitle : dashboardTitle}</h2>
           <p className="muted-copy">
-            {dashboardSubtitle}
+            {isOfflineLocalSingleUserProfile ? offlineSubtitle : dashboardSubtitle}
           </p>
         </div>
         <div className="dashboard-banner-meta">
@@ -195,7 +197,7 @@ export default function HomePage() {
           </div>
           <div>
             <span>Access role</span>
-            <strong>{roleLabel}</strong>
+            <strong>{isOfflineLocalSingleUserProfile ? 'User' : roleLabel}</strong>
           </div>
           <div>
             <span>Active employees</span>

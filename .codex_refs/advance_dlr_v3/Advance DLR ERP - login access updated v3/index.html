@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MSEDCL Substation Register System</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/print.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <span class="brand-badge">MSEDCL</span>
+        <h1>MSEDCL Substation Register System</h1>
+        <p>Offline-first local register for 33/11 KV substation records.</p>
+      </div>
+
+      <button type="button" class="nav-toggle no-print" id="mobile-nav-toggle" aria-label="Toggle navigation">
+        Menu
+      </button>
+
+      <nav class="sidebar-nav" id="app-nav">
+        <button type="button" class="nav-link active" data-route="dashboard">Dashboard</button>
+        <button type="button" class="nav-link" data-route="substations">Substation Management</button>
+        <button type="button" class="nav-link" data-route="historyregister">History Register</button>
+        <button type="button" class="nav-link" data-route="chargehandover">Charge Handover Register</button>
+        <button type="button" class="nav-link" data-route="dailylog">Daily Log / DLR</button>
+        <button type="button" class="nav-link" data-route="faults">Fault Register</button>
+        <button type="button" class="nav-link" data-route="maintenance">Maintenance Log</button>
+        <button type="button" class="nav-link" data-route="battery">Battery Maintenance</button>
+        <button type="button" class="nav-link" data-route="reports">Reports</button>
+        <button type="button" class="nav-link" data-route="datatools">Data Tools</button>
+        <button type="button" class="nav-link" id="users-nav-link" data-route="users" style="display: none;">User Management</button>
+        <button type="button" class="nav-link" data-route="settings">Settings</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <p>Local mode active</p>
+        <small>IndexedDB offline cache + optional Supabase cloud mode</small>
+      </div>
+    </aside>
+
+    <div class="main-shell">
+      <header class="topbar no-print">
+        <div>
+          <p class="eyebrow">Substation Operations</p>
+          <h2 id="page-title">Dashboard</h2>
+          <p class="page-subtitle" id="page-subtitle">Daily operation and maintenance records for local use.</p>
+        </div>
+
+        <div class="topbar-right">
+          <div class="status-chip">
+            <span class="chip-label">Storage</span>
+            <strong id="storage-status-value">IndexedDB Offline Cache</strong>
+          </div>
+          <div class="status-chip">
+            <span class="chip-label">Last Updated</span>
+            <strong id="updated-status">Not available</strong>
+          </div>
+          <div class="status-chip" id="user-status-chip" style="display: none;">
+            <span class="chip-label" id="user-status-label">User</span>
+            <strong id="user-status-value">-</strong>
+          </div>
+          <button type="button" class="secondary-button" id="user-menu-button" style="display: none;" title="User menu">
+            <span id="user-menu-label">Account</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content-shell" id="app-content" aria-live="polite"></main>
+    </div>
+  </div>
+
+  <div class="toast-region no-print" id="toast-region"></div>
+
+  <script src="js/cloud-config.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/cloud-sync.js" defer></script>
+  <script src="js/storage.js" defer></script>
+  <script src="js/repositories.js" defer></script>
+  <script src="js/app.js" defer></script>
+  <script src="js/auth.js" defer></script>
+  <script src="js/dashboard.js" defer></script>
+  <script src="js/substations.js" defer></script>
+  <script src="js/history-register.js" defer></script>
+  <script src="js/charge-handover.js" defer></script>
+  <script src="js/dailylog.js" defer></script>
+  <script src="js/faults.js" defer></script>
+  <script src="js/maintenance.js" defer></script>
+  <script src="js/battery.js" defer></script>
+  <script src="js/reports.js" defer></script>
+  <script src="js/data-tools.js" defer></script>
+  <script src="js/settings.js" defer></script>
+  <script src="js/users.js" defer></script>
+</body>
+</html>

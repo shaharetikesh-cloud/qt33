@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import MasterDataManager from '../components/forms/MasterDataManager'
 import { useAuth } from '../context/AuthContext'
+import { Capacitor } from '@capacitor/core'
 import { alertDetailSaved } from '../lib/detailSavedAlert'
 import { exportJson } from '../lib/exportUtils'
+import { saveBlobToDevice, shareFileUri } from '../lib/shareUtils'
+import { APP_VERSION_NAME } from '../lib/appVersion'
 import {
   buildBackupSnapshot,
   deleteMasterRecord,
@@ -22,6 +25,34 @@ import { normalizeAccessRole } from '../lib/substationAccess'
 const emptyImportState = {
   error: '',
   status: '',
+  preview: null,
+}
+
+function formatBackupFileName(now = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0')
+  return `qt33-dlr-backup-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}.json`
+}
+
+function summarizeBackupSnapshot(snapshot) {
+  const payload =
+    snapshot?.snapshotPayload && typeof snapshot.snapshotPayload === 'object'
+      ? snapshot.snapshotPayload
+      : snapshot
+  const countCollection = (value) => {
+    if (Array.isArray(value)) {
+      return value.length
+    }
+    if (value && typeof value === 'object') {
+      return Object.values(value).reduce((total, item) => total + countCollection(item), 0)
+    }
+    return 0
+  }
+  return {
+    backupVersion: snapshot?.backupVersion || 'legacy',
+    appVersion: snapshot?.appVersion || 'unknown',
+    exportedAt: snapshot?.exportedAt || snapshot?.created_at || '',
+    recordsCount: countCollection(payload),
+  }
 }
 
 function normalizeCtRatioValue(value) {
@@ -78,6 +109,7 @@ export default function MastersPage() {
   const [transformers, setTransformers] = useState(listMasterRecords('transformers', { profile }))
   const [mappings, setMappings] = useState([])
   const [importState, setImportState] = useState(emptyImportState)
+  const [pendingImportSnapshot, setPendingImportSnapshot] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -233,15 +265,32 @@ export default function MastersPage() {
 
   async function handleBackupExport() {
     try {
-      exportJson(await buildBackupSnapshot(profile), 'unified-msedcl-backup.json')
-      setImportState({
-        error: '',
-        status: 'Backup exported.',
-      })
+      const snapshot = await buildBackupSnapshot(profile)
+      const filename = formatBackupFileName(new Date())
+      if (Capacitor.isNativePlatform()) {
+        const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+          type: 'application/json',
+        })
+        const uri = await saveBlobToDevice(blob, filename)
+        await shareFileUri(uri, filename, 'QT33 Backup Export')
+        setImportState({
+          error: '',
+          status: `Backup exported. ${filename}`,
+          preview: null,
+        })
+      } else {
+        exportJson(snapshot, filename)
+        setImportState({
+          error: '',
+          status: `Backup exported. ${filename}`,
+          preview: null,
+        })
+      }
     } catch (error) {
       setImportState({
         error: error.message,
         status: '',
+        preview: null,
       })
     }
   }
@@ -255,16 +304,48 @@ export default function MastersPage() {
 
     try {
       const text = await file.text()
-      await importBackupSnapshot(JSON.parse(text), profile)
-      await refreshCollections()
+      const parsedSnapshot = JSON.parse(text)
+      const preview = summarizeBackupSnapshot(parsedSnapshot)
+      setPendingImportSnapshot(parsedSnapshot)
       setImportState({
         error: '',
-        status: 'Backup imported.',
+        status: 'Backup file parsed. Confirm import to continue.',
+        preview,
       })
     } catch (error) {
       setImportState({
         error: error.message,
         status: '',
+        preview: null,
+      })
+      setPendingImportSnapshot(null)
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!pendingImportSnapshot) {
+      return
+    }
+    try {
+      await importBackupSnapshot(
+        {
+          ...pendingImportSnapshot,
+          imported_at: new Date().toISOString(),
+        },
+        profile,
+      )
+      await refreshCollections()
+      setImportState({
+        error: '',
+        status: 'Backup imported successfully. Please restart app once.',
+        preview: null,
+      })
+      setPendingImportSnapshot(null)
+    } catch (error) {
+      setImportState({
+        error: error.message,
+        status: '',
+        preview: null,
       })
     }
   }
@@ -618,6 +699,14 @@ export default function MastersPage() {
             <p>{importState.error}</p>
           </div>
         ) : null}
+        {importState.preview ? (
+          <div className="callout info-callout">
+            <p>{`Backup version: ${importState.preview.backupVersion}`}</p>
+            <p>{`App version: ${importState.preview.appVersion}`}</p>
+            <p>{`Exported at: ${importState.preview.exportedAt || '-'}`}</p>
+            <p>{`Estimated records: ${importState.preview.recordsCount}`}</p>
+          </div>
+        ) : null}
         <div className="inline-actions">
           <button type="button" className="primary-button" onClick={() => void handleBackupExport()}>
             Export backup
@@ -626,7 +715,16 @@ export default function MastersPage() {
             Import backup
           </label>
           <input id="backup-import" type="file" accept=".json,application/json" onChange={(event) => void handleImportChange(event)} hidden />
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => void handleConfirmImport()}
+            disabled={!pendingImportSnapshot}
+          >
+            Confirm import
+          </button>
         </div>
+        <p className="muted-copy">{`Backup app version: ${APP_VERSION_NAME}`}</p>
       </section>
     </div>
   )

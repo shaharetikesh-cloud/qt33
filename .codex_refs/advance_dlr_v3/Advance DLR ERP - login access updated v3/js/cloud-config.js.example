@@ -1,0 +1,10 @@
+window.SubstationRegisterCloudConfig = {
+  enabled: true,
+  mode: "supabase",
+  supabaseUrl: "https://YOUR_PROJECT.supabase.co",
+  supabaseAnonKey: "YOUR_SUPABASE_ANON_KEY",
+  siteUrl: window.location.origin,
+  appInstanceId: "production",
+  offlineCacheEnabled: true,
+  allowLocalFallback: true
+};

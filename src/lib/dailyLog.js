@@ -2415,7 +2415,7 @@ export function buildDailyLogReportData({
   return {
     title: 'DLR Daily Log Report',
     orientation: 'landscape',
-    pageSize: 'a3',
+    pageSize: 'legal',
     companyName: companyProfile.companyName,
     metadata: [
       ['Company', companyProfile.companyName],

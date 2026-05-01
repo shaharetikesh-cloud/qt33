@@ -11,19 +11,21 @@ export function downloadBlob(blob, filename) {
 }
 
 export function exportJson(data, filename) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: 'application/json',
-  })
+  const blob = buildJsonBlob(data)
 
   downloadBlob(blob, filename)
 }
 
-export function exportCsv(rows, filename) {
-  const normalizedRows = Array.isArray(rows) ? rows : []
+export function buildJsonBlob(data) {
+  return new Blob([JSON.stringify(data, null, 2)], {
+    type: 'application/json',
+  })
+}
 
+export function buildCsvBlob(rows) {
+  const normalizedRows = Array.isArray(rows) ? rows : []
   if (!normalizedRows.length) {
-    downloadBlob(new Blob([''], { type: 'text/csv;charset=utf-8' }), filename)
-    return
+    return new Blob([''], { type: 'text/csv;charset=utf-8' })
   }
 
   const headers = Array.from(
@@ -46,16 +48,17 @@ export function exportCsv(rows, filename) {
     ),
   ]
 
-  downloadBlob(
-    new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8' }),
-    filename,
-  )
+  return new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8' })
 }
 
-export function exportWorkbook(sheets, filename) {
+export function exportCsv(rows, filename) {
+  downloadBlob(buildCsvBlob(rows), filename)
+}
+
+export function buildWorkbookBlob(sheets) {
   const workbook = XLSX.utils.book_new()
 
-  sheets.forEach((sheet) => {
+  ;(sheets || []).forEach((sheet) => {
     const worksheet = XLSX.utils.json_to_sheet(sheet.rows || [])
     XLSX.utils.book_append_sheet(
       workbook,
@@ -64,6 +67,14 @@ export function exportWorkbook(sheets, filename) {
     )
   })
 
-  XLSX.writeFile(workbook, filename)
+  const workbookArray = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+  return new Blob([workbookArray], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+}
+
+export function exportWorkbook(sheets, filename) {
+  const blob = buildWorkbookBlob(sheets)
+  downloadBlob(blob, filename)
 }
 
