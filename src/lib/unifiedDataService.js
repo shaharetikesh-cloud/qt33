@@ -291,6 +291,8 @@ function filterMasterRecordsByAccess(type, records, profile, masters) {
     })
 
   if (type === 'divisions') {
+    const actorProfileId = String(profile?.id || '').trim()
+    const actorAuthUserId = String(profile?.auth_user_id || profile?.firebase_uid || '').trim()
     const allowedBatterySets = filterByAllowedSubstations(masters?.batterySets || [])
     const allowedDivisionIds = new Set(
       allowedBatterySets
@@ -305,7 +307,18 @@ function filterMasterRecordsByAccess(type, records, profile, masters) {
       const matchesByDirectSubstation = directSubstationId
         ? allowedSubstationIds.includes(directSubstationId)
         : false
-      return matchesByBattery || matchesByDirectSubstation
+      const creatorCandidates = [
+        item?.createdBy,
+        item?.created_by,
+        item?.ownerUserId,
+        item?.owner_user_id,
+      ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+      const matchesCreator =
+        (actorProfileId && creatorCandidates.includes(actorProfileId)) ||
+        (actorAuthUserId && creatorCandidates.includes(actorAuthUserId))
+      return matchesByBattery || matchesByDirectSubstation || matchesCreator
     })
     console.info('[access:masters-filter]', {
       type,
@@ -371,12 +384,22 @@ export async function saveMasterRecord(type, record, actor) {
   const actorRole = normalizeUserRole(actor?.role)
   const actorSubstationId = String(actor?.substation_id || actor?.substationId || '').trim()
   const incomingSubstationId = normalizeRecordSubstationId(record)
+  const fallbackAllowedSubstationId = (() => {
+    const cachedSubstations = readReferenceCache().substations || []
+    const mappings = readMappings()
+    const allowed = getAllowedSubstationIdsForUser({
+      profile: actor,
+      substations: cachedSubstations,
+      mappings,
+    })
+    return Array.isArray(allowed) && allowed.length ? String(allowed[0] || '').trim() : ''
+  })()
   const scopedRecord =
     type === 'divisions' && actorRole !== 'super_admin'
       ? {
           ...record,
-          substationId: incomingSubstationId || actorSubstationId || '',
-          substation_id: incomingSubstationId || actorSubstationId || '',
+          substationId: incomingSubstationId || actorSubstationId || fallbackAllowedSubstationId || '',
+          substation_id: incomingSubstationId || actorSubstationId || fallbackAllowedSubstationId || '',
         }
       : record
 
