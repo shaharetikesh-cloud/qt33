@@ -13,8 +13,10 @@ import {
 import {
   getSupabaseAccessToken,
   getSupabaseAuthDiagnostics,
+  getSupabaseSessionDiagnostics,
   supabase,
 } from './supabase'
+import { firebaseAuth } from './firebase'
 
 const listeners = new Set()
 let syncInFlight = false
@@ -82,11 +84,22 @@ function isAuthorizationSyncError(error) {
 
 async function canRunCloudSync() {
   const auth = getSupabaseAuthDiagnostics()
+  const sessionDiag = await getSupabaseSessionDiagnostics()
+  let hasFirebaseToken = false
+  if (firebaseAuth?.currentUser) {
+    try {
+      hasFirebaseToken = Boolean(await firebaseAuth.currentUser.getIdToken())
+    } catch {
+      hasFirebaseToken = false
+    }
+  }
   const hasToken = Boolean(await getSupabaseAccessToken())
   return {
     ...auth,
+    ...sessionDiag,
+    hasFirebaseToken,
     hasToken,
-    ready: auth.hasSession && hasToken,
+    ready: auth.hasFirebaseUser && sessionDiag.hasSupabaseSession && hasToken,
   }
 }
 
@@ -282,7 +295,10 @@ export async function triggerSync() {
     emitSyncState()
     console.info('[sync] paused-login-required', {
       userId: authStatus.userId || '',
-      hasSession: authStatus.hasSession,
+      hasFirebaseUser: authStatus.hasFirebaseUser,
+      hasFirebaseToken: authStatus.hasFirebaseToken,
+      hasSupabaseSession: authStatus.hasSupabaseSession,
+      supabaseUserId: authStatus.supabaseUserId || '',
       pending: syncState.pending,
       lastError: syncState.lastError,
     })
@@ -385,12 +401,27 @@ export async function triggerSync() {
               break
             }
           }
+          const sessionAfterRefresh = await getSupabaseSessionDiagnostics()
+          let refreshedFirebaseToken = false
+          if (firebaseAuth?.currentUser) {
+            try {
+              refreshedFirebaseToken = Boolean(await firebaseAuth.currentUser.getIdToken())
+            } catch {
+              refreshedFirebaseToken = false
+            }
+          }
           await idbUpdateOutboxStatus(operation.queue_id, 'auth_error', {
             retry_count: operation.retry_count || 0,
             next_retry_at: Date.now() + 30 * 1000,
             last_error: error instanceof Error ? error.message : 'Auth error',
           })
           syncState.lastError = error instanceof Error ? error.message : 'Auth error'
+          console.info('[sync] auth-error', {
+            hasFirebaseUser: Boolean(firebaseAuth?.currentUser),
+            hasFirebaseToken: refreshedFirebaseToken,
+            hasSupabaseSession: sessionAfterRefresh.hasSupabaseSession,
+            supabaseUserId: sessionAfterRefresh.supabaseUserId || '',
+          })
           break
         }
         const retryCount = (operation.retry_count || 0) + 1
@@ -700,7 +731,7 @@ export async function initializeSyncEngine() {
   }
   console.info('[sync] startup', {
     userId: getSupabaseAuthDiagnostics().userId || '',
-    hasSession: getSupabaseAuthDiagnostics().hasSession,
+    hasFirebaseUser: getSupabaseAuthDiagnostics().hasFirebaseUser,
     pending: syncState.pending,
     lastError: syncState.lastError || '',
   })

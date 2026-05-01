@@ -27,8 +27,23 @@ export async function getSupabaseAccessToken({ forceRefresh = false } = {}) {
 export function getSupabaseAuthDiagnostics() {
   const user = firebaseAuth?.currentUser
   return {
-    hasSession: Boolean(user),
+    hasFirebaseUser: Boolean(user),
     userId: user?.uid || '',
+  }
+}
+
+export async function getSupabaseSessionDiagnostics() {
+  if (!supabase) {
+    return {
+      hasSupabaseSession: false,
+      supabaseUserId: '',
+    }
+  }
+  const { data } = await supabase.auth.getSession()
+  const session = data?.session || null
+  return {
+    hasSupabaseSession: Boolean(session?.access_token),
+    supabaseUserId: session?.user?.id || '',
   }
 }
 
