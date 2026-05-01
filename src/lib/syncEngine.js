@@ -13,7 +13,6 @@ import {
 import {
   getSupabaseAccessToken,
   getSupabaseAuthDiagnostics,
-  getSupabaseSessionDiagnostics,
   supabase,
 } from './supabase'
 import { firebaseAuth } from './firebase'
@@ -43,6 +42,7 @@ const syncState = {
   runPulled: 0,
   runPushed: 0,
   health: 'healthy',
+  firebaseJwtAccepted: null,
   realtimeConnected: false,
   lastError: '',
   lastConflictAt: '',
@@ -84,7 +84,6 @@ function isAuthorizationSyncError(error) {
 
 async function canRunCloudSync() {
   const auth = getSupabaseAuthDiagnostics()
-  const sessionDiag = await getSupabaseSessionDiagnostics()
   let hasFirebaseToken = false
   if (firebaseAuth?.currentUser) {
     try {
@@ -96,10 +95,9 @@ async function canRunCloudSync() {
   const hasToken = Boolean(await getSupabaseAccessToken())
   return {
     ...auth,
-    ...sessionDiag,
     hasFirebaseToken,
     hasToken,
-    ready: auth.hasFirebaseUser && sessionDiag.hasSupabaseSession && hasToken,
+    ready: auth.hasFirebaseUser && hasFirebaseToken && hasToken,
   }
 }
 
@@ -112,9 +110,17 @@ async function ensureCloudSyncAvailability() {
   }
   const { error } = await supabase.from('erp_records').select('id', { head: true, count: 'exact' })
   if (error) {
+    if (isAuthorizationSyncError(error)) {
+      syncState.firebaseJwtAccepted = false
+      emitSyncState()
+      console.info('[sync] firebase-jwt-rejected', {
+        status: Number(error?.status || error?.statusCode || 0),
+      })
+    }
     cloudSyncAvailable = !isMissingErpRecordsError(error)
     return cloudSyncAvailable
   }
+  syncState.firebaseJwtAccepted = true
   cloudSyncAvailable = true
   return true
 }
@@ -297,8 +303,6 @@ export async function triggerSync() {
       userId: authStatus.userId || '',
       hasFirebaseUser: authStatus.hasFirebaseUser,
       hasFirebaseToken: authStatus.hasFirebaseToken,
-      hasSupabaseSession: authStatus.hasSupabaseSession,
-      supabaseUserId: authStatus.supabaseUserId || '',
       pending: syncState.pending,
       lastError: syncState.lastError,
     })
@@ -401,7 +405,6 @@ export async function triggerSync() {
               break
             }
           }
-          const sessionAfterRefresh = await getSupabaseSessionDiagnostics()
           let refreshedFirebaseToken = false
           if (firebaseAuth?.currentUser) {
             try {
@@ -419,8 +422,7 @@ export async function triggerSync() {
           console.info('[sync] auth-error', {
             hasFirebaseUser: Boolean(firebaseAuth?.currentUser),
             hasFirebaseToken: refreshedFirebaseToken,
-            hasSupabaseSession: sessionAfterRefresh.hasSupabaseSession,
-            supabaseUserId: sessionAfterRefresh.supabaseUserId || '',
+            firebaseJwtAccepted: syncState.firebaseJwtAccepted,
           })
           break
         }

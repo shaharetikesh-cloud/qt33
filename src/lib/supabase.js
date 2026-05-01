@@ -39,21 +39,6 @@ export function getSupabaseAuthDiagnostics() {
   }
 }
 
-export async function getSupabaseSessionDiagnostics() {
-  if (!supabase) {
-    return {
-      hasSupabaseSession: false,
-      supabaseUserId: '',
-    }
-  }
-  const { data } = await supabase.auth.getSession()
-  const session = data?.session || null
-  return {
-    hasSupabaseSession: Boolean(session?.access_token),
-    supabaseUserId: session?.user?.id || '',
-  }
-}
-
 export const supabaseConfigError =
   missingSupabaseEnv.length > 0
     ? buildMissingEnvError('supabase', 'Supabase')
@@ -62,16 +47,12 @@ export const supabaseConfigError =
 export const supabase =
   !supabaseConfigError && !isOfflineLocalSingleUserProfile
     ? createClient(supabaseUrl, supabaseAnonKey, {
+      accessToken: async () => getSupabaseAccessToken(),
       global: {
         fetch: async (url, options = {}) => {
-          const urlText = String(url || '')
-          const isAuthEndpoint = urlText.includes('/auth/v1/')
-          const token = isAuthEndpoint ? '' : await getSupabaseAccessToken()
+          const token = await getSupabaseAccessToken()
           const headers = new Headers(options.headers || {})
-          // Keep Supabase apikey behavior and attach runtime auth when available.
-          if (token && !headers.has('Authorization')) {
-            headers.set('Authorization', `Bearer ${token}`)
-          }
+          // Keep firebase token on custom header for optional backend diagnostics/bridge.
           if (token && !headers.has('x-firebase-auth')) {
             headers.set('x-firebase-auth', token)
           }

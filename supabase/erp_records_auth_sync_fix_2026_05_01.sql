@@ -11,6 +11,17 @@ create index if not exists idx_erp_records_client_updated_at on public.erp_recor
 create index if not exists idx_erp_records_updated_by on public.erp_records(updated_by);
 create index if not exists idx_erp_records_device_id on public.erp_records(device_id);
 
+create or replace function public.rls_request_user_id()
+returns text
+language sql
+stable
+as $$
+  select nullif(
+    coalesce(auth.jwt() ->> 'sub', auth.uid()::text),
+    ''
+  );
+$$;
+
 create or replace function public.rls_is_admin_user()
 returns boolean
 language sql
@@ -21,7 +32,7 @@ as $$
   select exists (
     select 1
     from public.profiles p
-    where p.auth_user_id = auth.uid()::text
+    where p.auth_user_id = public.rls_request_user_id()
       and lower(coalesce(p.role, '')) in ('owner', 'main_admin', 'super_admin')
       and coalesce(p.is_active, true) = true
   );
@@ -42,7 +53,7 @@ begin
       select exists (
         select 1
         from public.user_substation_mappings m
-        where m.user_id = auth.uid()::text
+        where m.user_id = public.rls_request_user_id()
           and m.substation_id::text = $1
       )
     $q$
@@ -55,7 +66,7 @@ begin
     or exists (
       select 1
       from public.profiles p
-      where p.auth_user_id = auth.uid()::text
+      where p.auth_user_id = public.rls_request_user_id()
         and coalesce(p.is_active, true) = true
         and p.substation_id is not null
         and p.substation_id::text = target_substation_id
@@ -71,8 +82,8 @@ for select
 to authenticated
 using (
   public.rls_is_admin_user()
-  or owner_user_id = auth.uid()::text
-  or updated_by = auth.uid()::text
+  or owner_user_id = public.rls_request_user_id()
+  or updated_by = public.rls_request_user_id()
   or (
     coalesce(substation_id, '') <> ''
     and public.rls_can_access_substation(substation_id)
@@ -86,8 +97,8 @@ for insert
 to authenticated
 with check (
   public.rls_is_admin_user()
-  or owner_user_id = auth.uid()::text
-  or updated_by = auth.uid()::text
+  or owner_user_id = public.rls_request_user_id()
+  or updated_by = public.rls_request_user_id()
   or (
     coalesce(substation_id, '') <> ''
     and public.rls_can_access_substation(substation_id)
@@ -101,8 +112,8 @@ for update
 to authenticated
 using (
   public.rls_is_admin_user()
-  or owner_user_id = auth.uid()::text
-  or updated_by = auth.uid()::text
+  or owner_user_id = public.rls_request_user_id()
+  or updated_by = public.rls_request_user_id()
   or (
     coalesce(substation_id, '') <> ''
     and public.rls_can_access_substation(substation_id)
@@ -110,8 +121,8 @@ using (
 )
 with check (
   public.rls_is_admin_user()
-  or owner_user_id = auth.uid()::text
-  or updated_by = auth.uid()::text
+  or owner_user_id = public.rls_request_user_id()
+  or updated_by = public.rls_request_user_id()
   or (
     coalesce(substation_id, '') <> ''
     and public.rls_can_access_substation(substation_id)

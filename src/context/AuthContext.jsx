@@ -74,7 +74,6 @@ export function AuthProvider({ children }) {
     isLocalSqlMode ? null : supabaseConfigError,
   )
   const [recoveryMode, setRecoveryMode] = useState(false)
-  const [supabaseBridgeError, setSupabaseBridgeError] = useState('')
 
   const isProfileLoginAllowed = useCallback(async (nextProfile, { enforceSignOut } = {}) => {
     if (!nextProfile) {
@@ -167,51 +166,14 @@ export function AuthProvider({ children }) {
     setRecoveryMode(false)
   }, [applyAuthPayload, isProfileLoginAllowed])
 
-  const bridgeFirebaseToSupabaseSession = useCallback(
-    async ({ forceRefresh = false } = {}) => {
-      if (!isLocalSqlMode || !supabase || !firebaseAuth?.currentUser) {
-        return { accessToken: '', hasSupabaseSession: false, supabaseUserId: '' }
-      }
-      const firebaseIdToken = await firebaseAuth.currentUser.getIdToken(Boolean(forceRefresh))
-      if (!firebaseIdToken) {
-        return { accessToken: '', hasSupabaseSession: false, supabaseUserId: '' }
-      }
-
-      let currentSession = null
-      const current = await supabase.auth.getSession()
-      currentSession = current?.data?.session || null
-
-      if (forceRefresh || !currentSession?.access_token) {
-        const { data, error } = await supabase.auth.signInWithIdToken({
-          provider: 'firebase',
-          token: firebaseIdToken,
-        })
-        if (error) {
-          setSupabaseBridgeError(error.message || 'Supabase bridge sign-in failed.')
-          return { accessToken: '', hasSupabaseSession: false, supabaseUserId: '' }
-        }
-        currentSession = data?.session || null
-      }
-
-      if (currentSession?.access_token) {
-        setSupabaseBridgeError('')
-      }
-
-      return {
-        accessToken: currentSession?.access_token || '',
-        hasSupabaseSession: Boolean(currentSession?.access_token),
-        supabaseUserId: currentSession?.user?.id || '',
-      }
-    },
-    [],
-  )
-
   useEffect(() => {
     setSupabaseAccessTokenProvider(async ({ forceRefresh = false } = {}) => {
-      const bridge = await bridgeFirebaseToSupabaseSession({ forceRefresh })
-      return bridge.accessToken || ''
+      if (!firebaseAuth?.currentUser) {
+        return ''
+      }
+      return firebaseAuth.currentUser.getIdToken(Boolean(forceRefresh))
     })
-  }, [bridgeFirebaseToSupabaseSession])
+  }, [])
 
   useEffect(() => {
     if (isOfflineLocalSingleUserProfile) {
@@ -246,10 +208,7 @@ export function AuthProvider({ children }) {
             if (!alive) {
               return
             }
-            void (async () => {
-              await bridgeFirebaseToSupabaseSession()
-              await runLocalBootstrap()
-            })().finally(() => {
+            void runLocalBootstrap().finally(() => {
               if (alive && !initialAuthResolved) {
                 initialAuthResolved = true
                 setLoading(false)
@@ -311,7 +270,7 @@ export function AuthProvider({ children }) {
       alive = false
       subscription.unsubscribe()
     }
-  }, [bootstrapLocalSession, bridgeFirebaseToSupabaseSession, syncSupabaseSessionState])
+  }, [bootstrapLocalSession, syncSupabaseSessionState])
 
   useEffect(() => {
     if (!isOfflineLocalSingleUserProfile) {
@@ -346,7 +305,6 @@ export function AuthProvider({ children }) {
           identifier: identifier || username || email,
           password,
         })
-        await bridgeFirebaseToSupabaseSession()
         if (payload?.profile) {
           await isProfileLoginAllowed(payload.profile, { enforceSignOut: true })
         }
@@ -646,7 +604,6 @@ export function AuthProvider({ children }) {
     loading,
     authBusy,
     profileError,
-    supabaseBridgeError,
     recoveryMode,
     backendLabel,
     backendMode: isLocalSqlMode ? 'local-sql' : 'supabase',
