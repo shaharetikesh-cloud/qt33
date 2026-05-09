@@ -47,6 +47,18 @@ function numericOrZero(value) {
   return numericOrNull(value) ?? 0
 }
 
+function hasFilledValue(value) {
+  if (value === null || value === undefined) {
+    return false
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() !== ''
+  }
+
+  return true
+}
+
 function textValue(value) {
   return String(value || '').trim()
 }
@@ -434,6 +446,101 @@ function normalizeRow(row, config, hour) {
     ),
     remark: row?.remark || '',
   }
+}
+
+function applyCarryForwardAutofill(rows, config, seed = null) {
+  const nextRows = rows.map((row) => ({
+    ...row,
+    feederReadings: { ...(row.feederReadings || {}) },
+    batteryVoltages: [...(row.batteryVoltages || [])],
+    transformerTaps: [...(row.transformerTaps || [])],
+    transformerTemperatures: [...(row.transformerTemperatures || [])],
+  }))
+
+  const feederCarryState = Object.fromEntries(
+    config.feeders.map((feeder) => [
+      feeder.id,
+      {
+        amp: hasFilledValue(seed?.feederMetricById?.[feeder.id]?.amp)
+          ? String(seed.feederMetricById[feeder.id].amp)
+          : '',
+        kv: hasFilledValue(seed?.feederMetricById?.[feeder.id]?.kv)
+          ? String(seed.feederMetricById[feeder.id].kv)
+          : '',
+      },
+    ]),
+  )
+  const batteryCarryState = config.batterySets.map((_, index) =>
+    hasFilledValue(seed?.batteryVoltages?.[index]) ? String(seed.batteryVoltages[index]) : '',
+  )
+  const tapCarryState = config.transformers.map((_, index) =>
+    hasFilledValue(seed?.transformerTaps?.[index]) ? String(seed.transformerTaps[index]) : '',
+  )
+  const tempCarryState = config.transformers.map((_, index) =>
+    hasFilledValue(seed?.transformerTemperatures?.[index])
+      ? String(seed.transformerTemperatures[index])
+      : '',
+  )
+
+  nextRows.forEach((row) => {
+    config.feeders.forEach((feeder) => {
+      const reading = row.feederReadings?.[feeder.id] || createBlankFeederReading()
+      const metadata = reading.metadata || {}
+
+      const ampCurrent = hasFilledValue(reading.amp) ? String(reading.amp) : ''
+      if (ampCurrent) {
+        feederCarryState[feeder.id].amp = ampCurrent
+      } else if (hasFilledValue(feederCarryState[feeder.id].amp)) {
+        reading.amp = feederCarryState[feeder.id].amp
+        reading.metadata = {
+          ...metadata,
+          ampSourceType: 'carry_forward',
+        }
+      }
+
+      const kvCurrent = hasFilledValue(reading.kv) ? String(reading.kv) : ''
+      if (kvCurrent) {
+        feederCarryState[feeder.id].kv = kvCurrent
+      } else if (hasFilledValue(feederCarryState[feeder.id].kv)) {
+        reading.kv = feederCarryState[feeder.id].kv
+        reading.metadata = {
+          ...reading.metadata,
+          kvSourceType: 'carry_forward',
+        }
+      }
+
+      row.feederReadings[feeder.id] = reading
+    })
+
+    row.batteryVoltages = row.batteryVoltages.map((value, index) => {
+      if (hasFilledValue(value)) {
+        batteryCarryState[index] = String(value)
+        return value
+      }
+
+      return hasFilledValue(batteryCarryState[index]) ? batteryCarryState[index] : ''
+    })
+
+    row.transformerTaps = row.transformerTaps.map((value, index) => {
+      if (hasFilledValue(value)) {
+        tapCarryState[index] = String(value)
+        return value
+      }
+
+      return hasFilledValue(tapCarryState[index]) ? tapCarryState[index] : ''
+    })
+
+    row.transformerTemperatures = row.transformerTemperatures.map((value, index) => {
+      if (hasFilledValue(value)) {
+        tempCarryState[index] = String(value)
+        return value
+      }
+
+      return hasFilledValue(tempCarryState[index]) ? tempCarryState[index] : ''
+    })
+  })
+
+  return nextRows
 }
 
 function stripDerivedRows(rows = [], config) {
@@ -1862,6 +1969,10 @@ export function findCarryForwardSnapshot(records, substationId, operationalDate,
     return {
       record: null,
       valuesByFeederId: {},
+      feederMetricById: {},
+      batteryVoltages: [],
+      transformerTaps: [],
+      transformerTemperatures: [],
     }
   }
 
@@ -1872,6 +1983,10 @@ export function findCarryForwardSnapshot(records, substationId, operationalDate,
     priorRecords.find((record) => record.operationalDate === previousDayLabel) || priorRecords[0]
 
   const valuesByFeederId = {}
+  const feederMetricById = {}
+  const batteryVoltages = []
+  const transformerTaps = []
+  const transformerTemperatures = []
   const originalRows = preferredRecord?.payload?.manualRows || preferredRecord?.payload?.rows || []
   const rows = remapRowFeederReadingsForCurrentConfig(
     originalRows,
@@ -1884,13 +1999,40 @@ export function findCarryForwardSnapshot(records, substationId, operationalDate,
 
     Object.entries(row?.feederReadings || {}).forEach(([feederId, reading]) => {
       if (valuesByFeederId[feederId] || numericOrNull(reading?.kwh) === null) {
-        return
+        // no-op
+      } else {
+        valuesByFeederId[feederId] = {
+          kwh: String(reading.kwh),
+          sourceDate: preferredRecord.operationalDate,
+          sourceHour: row.hour || DAILY_LOG_HOURS[rowIndex],
+        }
       }
 
-      valuesByFeederId[feederId] = {
-        kwh: String(reading.kwh),
-        sourceDate: preferredRecord.operationalDate,
-        sourceHour: row.hour || DAILY_LOG_HOURS[rowIndex],
+      const feederMetrics = feederMetricById[feederId] || { amp: '', kv: '' }
+      if (!hasFilledValue(feederMetrics.amp) && hasFilledValue(reading?.amp)) {
+        feederMetrics.amp = String(reading.amp)
+      }
+      if (!hasFilledValue(feederMetrics.kv) && hasFilledValue(reading?.kv)) {
+        feederMetrics.kv = String(reading.kv)
+      }
+      feederMetricById[feederId] = feederMetrics
+    })
+
+    ;(row?.batteryVoltages || []).forEach((value, index) => {
+      if (!hasFilledValue(batteryVoltages[index]) && hasFilledValue(value)) {
+        batteryVoltages[index] = String(value)
+      }
+    })
+
+    ;(row?.transformerTaps || []).forEach((value, index) => {
+      if (!hasFilledValue(transformerTaps[index]) && hasFilledValue(value)) {
+        transformerTaps[index] = String(value)
+      }
+    })
+
+    ;(row?.transformerTemperatures || []).forEach((value, index) => {
+      if (!hasFilledValue(transformerTemperatures[index]) && hasFilledValue(value)) {
+        transformerTemperatures[index] = String(value)
       }
     })
   }
@@ -1898,6 +2040,10 @@ export function findCarryForwardSnapshot(records, substationId, operationalDate,
   return {
     record: preferredRecord || null,
     valuesByFeederId,
+    feederMetricById,
+    batteryVoltages,
+    transformerTaps,
+    transformerTemperatures,
   }
 }
 
@@ -1988,6 +2134,12 @@ export function createDailyLogFormState({
           recordId: carryForward.record.id,
         }
       : null,
+    carryForwardAutoFillSeed: {
+      feederMetricById: carryForward.feederMetricById,
+      batteryVoltages: carryForward.batteryVoltages,
+      transformerTaps: carryForward.transformerTaps,
+      transformerTemperatures: carryForward.transformerTemperatures,
+    },
     carryForwardWarning:
       !existingRecord && !carryForward.record
         ? 'Previous day closing KWH not found. Please enter opening reading manually.'
@@ -1996,7 +2148,11 @@ export function createDailyLogFormState({
 }
 
 export function deriveDailyLogState(form, config) {
-  const baseRows = stripDerivedRows(form?.rows || [], config)
+  const baseRows = applyCarryForwardAutofill(
+    stripDerivedRows(form?.rows || [], config),
+    config,
+    form?.carryForwardAutoFillSeed,
+  )
   const dayStatus = form?.dayStatus === 'finalized' ? 'finalized' : 'draft'
   const normalizedMeterChangeEvents = (form?.meterChangeEvents || [])
     .map((event) => normalizeMeterChangeEvent(event, config))

@@ -214,6 +214,7 @@ export default function DailyLogPage() {
     interruptions: [],
     meterChangeEvents: [],
     carryForwardSource: null,
+    carryForwardAutoFillSeed: null,
     carryForwardWarning: '',
     dayStatus: 'draft',
   })
