@@ -1,6 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { navigationGroups, findNavigationItem } from '../config/navigation'
+import {
+  findNavigationItem,
+  getVisibleNavigationGroups,
+  navigationGroups,
+} from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
 import { loadReferenceData } from '../lib/unifiedDataService'
 import {
@@ -31,62 +35,10 @@ const defaultGroupState = Object.fromEntries(
   navigationGroups.map((group) => [group.key, true]),
 )
 
-function canAccessNavigationItem(item, access) {
-  if (item.moduleKey && !access.canViewModule(item.moduleKey)) {
-    return false
-  }
-
-  if (!item.access) {
-    return true
-  }
-
-  if (item.access === 'main_admin') {
-    return access.isMainAdmin
-  }
-
-  if (item.access === 'user_manager') {
-    return access.canManageUsers
-  }
-
-  return true
-}
-
-function getVisibleGroups(access) {
-  const offlineAllowedRoutes = new Set([
-    '/',
-    '/substations',
-    '/daily-log',
-    '/maintenance',
-    '/history-register',
-    '/feeder-history-account',
-    '/asset-history-account',
-    '/battery',
-    '/faults',
-    '/charge-handover',
-    '/employees',
-    '/report-center',
-    '/month-end-pack',
-    '/masters',
-    '/session',
-  ])
-
-  return navigationGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => {
-        if (isOfflineLocalSingleUserProfile && !offlineAllowedRoutes.has(item.to)) {
-          return false
-        }
-        return canAccessNavigationItem(item, access)
-      }),
-    }))
-    .filter((group) => group.items.length)
-}
-
-function getWorkspaceRouteKey(pathname) {
+function getWorkspaceRouteKey(pathname, offlineLauncherHome) {
   const raw = pathname || '/'
   if (raw === '/' || raw === '') {
-    return 'dashboard'
+    return offlineLauncherHome ? 'home-menu' : 'dashboard'
   }
   const first = raw.replace(/^\/+/, '').split('/')[0] || 'workspace'
   return first.replace(/[^a-z0-9-]/gi, '') || 'workspace'
@@ -113,7 +65,6 @@ export default function AppShell() {
     canViewModule,
     canManageUsers,
     isMainAdmin,
-    isApproved,
     signOut,
     authBusy,
     profileError,
@@ -124,10 +75,12 @@ export default function AppShell() {
   const dropdownRef = useRef(null)
   const sidebarBeforeWorkspaceExpandRef = useRef(null)
   const hasCommittedRouteRef = useRef(false)
-  const activeItem = findNavigationItem(location.pathname)
+  const activeItem = findNavigationItem(location.pathname, {
+    offlineRootHomeMenu: isOfflineLocalSingleUserProfile,
+  })
   const visibleGroups = useMemo(
     () =>
-      getVisibleGroups({
+      getVisibleNavigationGroups({
         canViewModule,
         canManageUsers,
         isMainAdmin,
@@ -185,7 +138,7 @@ export default function AppShell() {
     isPhoneViewport && currentUserName.includes(' ')
       ? currentUserName.split(' ')[0]
       : currentUserName
-  const approvalLabel = isApproved ? 'Ready' : profile?.approval_status || 'Pending'
+  const approvalLabel = 'Active'
   const brandTitle = isPhoneViewport ? 'QT ERP' : 'QT - Unified Substation ERP'
   const brandSubtitle = 'Substation DLR & Reports'
   const syncHealthLabel =
@@ -198,7 +151,8 @@ export default function AppShell() {
         : 'Health: Live'
 
   const workspaceRouteKey = useMemo(
-    () => getWorkspaceRouteKey(location.pathname),
+    () =>
+      getWorkspaceRouteKey(location.pathname, isOfflineLocalSingleUserProfile),
     [location.pathname],
   )
 
@@ -253,6 +207,14 @@ export default function AppShell() {
       active = false
     }
   }, [preferredSubstationId, profile])
+
+  useEffect(() => {
+    if (!isOfflineLocalSingleUserProfile) {
+      return
+    }
+    setSidebarCollapsedState(true)
+    setSidebarCollapsed(true)
+  }, [])
 
   useEffect(() => {
     if (isOfflineLocalSingleUserProfile) {
@@ -530,6 +492,7 @@ export default function AppShell() {
         sidebarCollapsed ? 'app-shell-sidebar-collapsed' : '',
         activeItem?.focusMode ? 'app-shell-focus' : '',
         isWorkspaceExpanded ? 'app-shell-workspace-expanded' : '',
+        isOfflineLocalSingleUserProfile ? 'app-shell-offline-no-sidebar' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -607,24 +570,28 @@ export default function AppShell() {
 
         <div className="workspace-header-inner">
           <div className="workspace-header-left">
-            <button
-              type="button"
-              className="header-icon-button"
-              onClick={handleToggleSidebar}
-              aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-            >
-              <AppIcon name="menu" />
-            </button>
+            {!isOfflineLocalSingleUserProfile ? (
+              <button
+                type="button"
+                className="header-icon-button"
+                onClick={handleToggleSidebar}
+                aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              >
+                <AppIcon name="menu" />
+              </button>
+            ) : null}
 
-            <button
-              type="button"
-              className="header-icon-button workspace-theme-toggle"
-              onClick={handleToggleUiTheme}
-              aria-label={uiTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-              title={uiTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-            >
-              <AppIcon name={uiTheme === 'dark' ? 'sun' : 'moon'} />
-            </button>
+            {!isOfflineLocalSingleUserProfile ? (
+              <button
+                type="button"
+                className="header-icon-button workspace-theme-toggle"
+                onClick={handleToggleUiTheme}
+                aria-label={uiTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+                title={uiTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+              >
+                <AppIcon name={uiTheme === 'dark' ? 'sun' : 'moon'} />
+              </button>
+            ) : null}
 
             <div className="workspace-brand workspace-brand-qt33">
               <Qt33OffsiteBrand variant="header" />
@@ -636,15 +603,19 @@ export default function AppShell() {
           </div>
 
           <div className="workspace-header-center">
-            <p className="workspace-breadcrumbs">
-              {currentBreadcrumbs.map((item, index) => (
-                <span key={`${item}-${index}`}>
-                  {index ? <span className="workspace-breadcrumb-separator">&gt;</span> : null}
-                  {item}
-                </span>
-              ))}
-            </p>
-            <h1>{currentPageTitle}</h1>
+            {!isOfflineLocalSingleUserProfile ? (
+              <>
+                <p className="workspace-breadcrumbs">
+                  {currentBreadcrumbs.map((item, index) => (
+                    <span key={`${item}-${index}`}>
+                      {index ? <span className="workspace-breadcrumb-separator">&gt;</span> : null}
+                      {item}
+                    </span>
+                  ))}
+                </p>
+                <h1>{currentPageTitle}</h1>
+              </>
+            ) : null}
           </div>
 
           <div className="workspace-header-right">
@@ -764,24 +735,27 @@ export default function AppShell() {
         </div>
       </header>
 
-      <button
-        type="button"
-        className={[
-          'workspace-sidebar-backdrop',
-          showMobileSidebar ? 'workspace-sidebar-backdrop-visible' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        aria-label="Close navigation"
-        aria-hidden={!showMobileSidebar}
-        tabIndex={showMobileSidebar ? 0 : -1}
-        onClick={() => {
-          setSidebarCollapsedState(true)
-          setSidebarCollapsed(true)
-        }}
-      />
+      {!isOfflineLocalSingleUserProfile ? (
+        <button
+          type="button"
+          className={[
+            'workspace-sidebar-backdrop',
+            showMobileSidebar ? 'workspace-sidebar-backdrop-visible' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          aria-label="Close navigation"
+          aria-hidden={!showMobileSidebar}
+          tabIndex={showMobileSidebar ? 0 : -1}
+          onClick={() => {
+            setSidebarCollapsedState(true)
+            setSidebarCollapsed(true)
+          }}
+        />
+      ) : null}
 
       <div className="workspace-body">
+        {!isOfflineLocalSingleUserProfile ? (
         <aside className="sidebar workspace-sidebar" aria-label="Primary navigation">
           <nav className="workspace-nav">
             {visibleGroups.map((group) => (
@@ -832,12 +806,14 @@ export default function AppShell() {
                       className={({ isActive }) =>
                         [
                           'nav-link workspace-nav-link',
-                          isActive ? 'nav-link-active workspace-nav-link-active' : '',
+                          isActive || (location.pathname === '/' && item.to === '/dashboard')
+                            ? 'nav-link-active workspace-nav-link-active'
+                            : '',
                         ]
                           .filter(Boolean)
                           .join(' ')
                       }
-                      end={item.to === '/'}
+                      end={item.to === '/dashboard'}
                     >
                       <span className="workspace-nav-link-icon">
                         <AppIcon name={item.icon} size={18} />
@@ -855,17 +831,9 @@ export default function AppShell() {
             ))}
           </nav>
         </aside>
+        ) : null}
 
         <main className="content-shell workspace-content-shell">
-          {!isApproved ? (
-            <section className="callout warning-callout workspace-inline-note">
-              <p>
-                Approval pending. Admin activate kareparyant operational writes restricted
-                thevata yetil.
-              </p>
-            </section>
-          ) : null}
-
           {profile?.must_change_password ? (
             <section className="callout warning-callout workspace-inline-note">
               <p>
@@ -887,7 +855,19 @@ export default function AppShell() {
             </section>
           ) : null}
 
-          <Outlet />
+          <Suspense
+            fallback={
+              <div className="loading-screen">
+                <div className="loading-card">
+                  <p className="eyebrow">QT33</p>
+                  <h1>Loading module…</h1>
+                  <p>Please wait.</p>
+                </div>
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
           <section className="content-card" style={{ marginTop: '1rem' }}>
             <p className="muted-copy">
               Contact: qt33dlrerp@gmail.com |{' '}

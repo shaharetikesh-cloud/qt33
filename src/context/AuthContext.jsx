@@ -32,7 +32,6 @@ import {
 import { supabase, supabaseConfigError } from '../lib/supabase'
 import { firebaseAuth } from '../lib/firebase'
 import { setSupabaseAccessTokenProvider } from '../lib/supabase'
-import { getSubscriptionAccessState } from '../lib/subscription'
 import { onAuthStateChanged } from 'firebase/auth'
 
 const AuthContext = createContext(null)
@@ -82,23 +81,6 @@ export function AuthProvider({ children }) {
     isLocalSqlMode ? null : supabaseConfigError,
   )
   const [recoveryMode, setRecoveryMode] = useState(false)
-
-  const isProfileLoginAllowed = useCallback(async (nextProfile, { enforceSignOut } = {}) => {
-    if (!nextProfile) {
-      return true
-    }
-
-    const subscriptionState = getSubscriptionAccessState(nextProfile)
-    if (!subscriptionState.blocked) {
-      return true
-    }
-
-    if (enforceSignOut) {
-      await localSignOut()
-    }
-
-    throw new Error(subscriptionState.message)
-  }, [])
 
   const applyAuthPayload = useCallback((payload) => {
     setSession(payload?.session ?? null)
@@ -196,12 +178,9 @@ export function AuthProvider({ children }) {
       applyAuthPayload({ session: null, profile: null })
       throw new Error('Email verify kelya nantarach dashboard access milel.')
     }
-    if (payload?.session && payload?.profile) {
-      await isProfileLoginAllowed(payload.profile, { enforceSignOut: true })
-    }
     applyAuthPayload(payload)
     setRecoveryMode(false)
-  }, [applyAuthPayload, isProfileLoginAllowed])
+  }, [applyAuthPayload])
 
   useEffect(() => {
     setSupabaseAccessTokenProvider(async ({ forceRefresh = false } = {}) => {
@@ -342,9 +321,6 @@ export function AuthProvider({ children }) {
           identifier: identifier || username || email,
           password,
         })
-        if (payload?.profile) {
-          await isProfileLoginAllowed(payload.profile, { enforceSignOut: true })
-        }
         applyAuthPayload(payload)
         setRecoveryMode(false)
         return payload
@@ -649,7 +625,7 @@ export function AuthProvider({ children }) {
     isMainAdmin,
     isSuperAdmin: isMainAdmin,
     isSubstationAdmin,
-    isApproved: Boolean(profile?.is_active),
+    isApproved: true,
     isReadOnlyUser,
     canManageUsers,
     canViewModule: (moduleKey) => canPerformModuleAction(profile, moduleKey, 'view'),

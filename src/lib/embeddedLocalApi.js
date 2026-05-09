@@ -1451,10 +1451,6 @@ export async function embeddedApiRequest(path, options = {}) {
       throw new Error('Username/User ID kiwa password chukicha aahe.')
     }
 
-    if (!user.is_active) {
-      throw new Error('Inactive user login karu shakat nahi.')
-    }
-
     const session = createSession(database, user)
     audit(database, 'login', user, {
       source: 'embedded-offline',

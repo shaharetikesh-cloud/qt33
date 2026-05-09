@@ -5,10 +5,12 @@ import {
   getNavigationGroupState,
   getPreferredSubstationId,
   getSidebarCollapsed,
+  getUiTheme,
+  setUiTheme,
 } from '../lib/uiPreferences'
 import { alertDetailSaved } from '../lib/detailSavedAlert'
 import { loadSessionActivity } from '../lib/unifiedDataService'
-import { isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
+import { backendLabel, isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
 import { APP_VERSION_NAME } from '../lib/appVersion'
 
 function resolveDisplayUsername(profile, sessionUser) {
@@ -23,12 +25,26 @@ function resolveDisplayUsername(profile, sessionUser) {
   return String(profile?.full_name || '').trim() || 'Not set'
 }
 
+function estimateStorageUsageKb() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return 0
+  }
+  let bytes = 0
+  for (const key of Object.keys(window.localStorage)) {
+    if (!key.startsWith('umsw.')) {
+      continue
+    }
+    const value = window.localStorage.getItem(key) || ''
+    bytes += key.length + value.length
+  }
+  return Math.round(bytes / 1024)
+}
+
 export default function SessionPage() {
   const navigate = useNavigate()
   const {
     profile,
     session,
-    isApproved,
     isAdmin,
     isSuperAdmin,
     roleLabel,
@@ -48,30 +64,17 @@ export default function SessionPage() {
     confirmPassword: '',
   })
   const [passwordStatus, setPasswordStatus] = useState('')
-  const [storageUsageKb, setStorageUsageKb] = useState(0)
-
-  function estimateStorageUsageKb() {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return 0
-    }
-    let bytes = 0
-    for (const key of Object.keys(window.localStorage)) {
-      if (!key.startsWith('umsw.')) {
-        continue
-      }
-      const value = window.localStorage.getItem(key) || ''
-      bytes += key.length + value.length
-    }
-    return Math.round(bytes / 1024)
+  const [storageUsageKb] = useState(() =>
+    isOfflineLocalSingleUserProfile ? estimateStorageUsageKb() : 0,
+  )
+  const [uiTheme, setUiThemeState] = useState(() => getUiTheme())
+  function handleToggleUiTheme() {
+    setUiThemeState((current) => {
+      const next = current === 'dark' ? 'light' : 'dark'
+      setUiTheme(next)
+      return next
+    })
   }
-
-  useEffect(() => {
-    if (!isOfflineLocalSingleUserProfile) {
-      return
-    }
-    setStorageUsageKb(estimateStorageUsageKb())
-  }, [])
-
   function handleResetLocalData() {
     const confirmed = window.confirm(
       'All data on this device will be deleted. Backup export kelay ka? हा action undo hot nahi.',
@@ -172,8 +175,8 @@ export default function SessionPage() {
             <p>{isOfflineLocalSingleUserProfile ? 'User' : roleLabel || 'Pending profile'}</p>
           </article>
           <article className="detail-card">
-            <h3>Approval</h3>
-            <p>{isApproved ? 'Approved' : profile?.approval_status || 'Pending'}</p>
+            <h3>Status</h3>
+            <p>Active</p>
           </article>
           {!isOfflineLocalSingleUserProfile ? (
             <article className="detail-card">
@@ -219,6 +222,9 @@ export default function SessionPage() {
             </article>
           </div>
           <div className="inline-actions">
+            <button type="button" className="ghost-light-button" onClick={handleToggleUiTheme}>
+              {uiTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            </button>
             <button type="button" className="primary-button" onClick={() => navigate('/masters')}>
               Backup Export / Import
             </button>

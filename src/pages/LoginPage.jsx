@@ -60,7 +60,7 @@ export default function LoginPage() {
       await signUp(signupForm)
       setStatus(
         isLocalSqlMode
-          ? 'Signup request submit zala. Approval nantar 15 divas trial var login karta yeil.'
+          ? 'Signup request submit zala. Account ready zalyanantar login karta yeil.'
           : 'Account request create zala. Email verify nantarach dashboard login allow asel.',
       )
       setMode('login')
@@ -339,7 +339,7 @@ export default function LoginPage() {
             <div className="callout info-callout">
               <p>
                 Public signup madhye fakta Substation Admin role allowed aahe.
-                Approval nantar 15-day trial active hoil. Trial samplya nantar subscription required.
+                Account ready zalyanantar login access milel.
               </p>
             </div>
           </form>

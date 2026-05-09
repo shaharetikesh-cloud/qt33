@@ -146,55 +146,8 @@ function normalizeRole(role) {
   return normalized || 'normal_user'
 }
 
-function isMonthlyExemptRole(role) {
-  const normalized = String(role || '').trim().toLowerCase()
-  return ['super_admin', 'main_admin', 'owner', 'admin'].includes(normalized)
-}
-
-function getActivationStartIso(userRow) {
-  return (
-    userRow?.created_at ||
-    userRow?.updated_at ||
-    ''
-  )
-}
-
-function isMonthlyExpired(userRow) {
-  if (!userRow?.is_active || isMonthlyExemptRole(userRow?.role)) {
-    return false
-  }
-  const baseIso = getActivationStartIso(userRow)
-  const base = Date.parse(baseIso)
-  if (!Number.isFinite(base)) {
-    return false
-  }
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
-  return Date.now() - base >= THIRTY_DAYS_MS
-}
-
 async function applyMonthlyAutoDisable(rows = []) {
-  if (!supabase || !rows.length) {
-    return rows
-  }
-  const expiredRows = rows.filter((row) => isMonthlyExpired(row) && row.id)
-  if (!expiredRows.length) {
-    return rows
-  }
-  const nowIso = new Date().toISOString()
-  for (const row of expiredRows) {
-    await supabase
-      .from('profiles')
-      .update({
-        is_active: false,
-        updated_at: nowIso,
-      })
-      .eq('id', row.id)
-  }
-  return rows.map((row) =>
-    expiredRows.some((expired) => expired.id === row.id)
-      ? { ...row, is_active: false, updated_at: nowIso }
-      : row,
-  )
+  return rows
 }
 
 function buildPlaceholderEmail(username) {
@@ -396,14 +349,6 @@ export async function localSignIn(credentials) {
   }
   const token = await result.user.getIdToken()
   const profile = await ensureProfileForFirebaseUser(result.user, { emailVerified: true })
-  if (profile && isMonthlyExpired(profile)) {
-    await supabase
-      .from('profiles')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('id', profile.id)
-    await signOut(firebaseAuth)
-    throw new Error('30-day access expired. Main Admin/Owner ne account पुन्हा active करावा.')
-  }
   if (profile?.id) {
     await supabase
       .from('profiles')
