@@ -453,7 +453,7 @@ function normalizeRow(row, config, hour) {
   }
 }
 
-function applyCarryForwardAutofill(rows, config, seed = null) {
+function applyCarryForwardAutofill(rows, config, seed = null, suppressedCells = {}) {
   const nextRows = rows.map((row) => ({
     ...row,
     feederReadings: { ...(row.feederReadings || {}) },
@@ -492,17 +492,26 @@ function applyCarryForwardAutofill(rows, config, seed = null) {
       const reading = row.feederReadings?.[feeder.id] || createBlankFeederReading()
       const metadata = reading.metadata || {}
       const hasKwhForRow = hasFilledValue(reading.kwh)
+      const ampSuppressed = Boolean(suppressedCells[`f:${row.hour}:${feeder.id}:amp`])
+      const kvSuppressed = Boolean(suppressedCells[`f:${row.hour}:${feeder.id}:kv`])
 
       const ampCurrent = hasFilledValue(reading.amp) ? String(reading.amp) : ''
       if (ampCurrent) {
         feederCarryState[feeder.id].amp = ampCurrent
-      } else if (hasKwhForRow && hasFilledValue(feederCarryState[feeder.id].amp)) {
+      } else if (
+        !ampSuppressed &&
+        hasKwhForRow &&
+        hasFilledValue(feederCarryState[feeder.id].amp)
+      ) {
         reading.amp = feederCarryState[feeder.id].amp
         reading.metadata = {
           ...metadata,
           ampSourceType: 'carry_forward',
         }
-      } else if (!hasKwhForRow && metadata.ampSourceType === 'carry_forward') {
+      } else if (
+        (ampSuppressed || !hasKwhForRow) &&
+        metadata.ampSourceType === 'carry_forward'
+      ) {
         reading.amp = ''
         reading.metadata = {
           ...metadata,
@@ -513,13 +522,20 @@ function applyCarryForwardAutofill(rows, config, seed = null) {
       const kvCurrent = hasFilledValue(reading.kv) ? String(reading.kv) : ''
       if (kvCurrent) {
         feederCarryState[feeder.id].kv = kvCurrent
-      } else if (hasKwhForRow && hasFilledValue(feederCarryState[feeder.id].kv)) {
+      } else if (
+        !kvSuppressed &&
+        hasKwhForRow &&
+        hasFilledValue(feederCarryState[feeder.id].kv)
+      ) {
         reading.kv = feederCarryState[feeder.id].kv
         reading.metadata = {
           ...reading.metadata,
           kvSourceType: 'carry_forward',
         }
-      } else if (!hasKwhForRow && (reading.metadata?.kvSourceType || '') === 'carry_forward') {
+      } else if (
+        (kvSuppressed || !hasKwhForRow) &&
+        (reading.metadata?.kvSourceType || '') === 'carry_forward'
+      ) {
         reading.kv = ''
         reading.metadata = {
           ...reading.metadata,
@@ -531,30 +547,128 @@ function applyCarryForwardAutofill(rows, config, seed = null) {
     })
 
     row.batteryVoltages = row.batteryVoltages.map((value, index) => {
+      const suppressed = Boolean(suppressedCells[`b:${row.hour}:${index}:voltage`])
       if (hasFilledValue(value)) {
         batteryCarryState[index] = String(value)
         return value
+      }
+
+      if (suppressed) {
+        return ''
       }
 
       return hasFilledValue(batteryCarryState[index]) ? batteryCarryState[index] : ''
     })
 
     row.transformerTaps = row.transformerTaps.map((value, index) => {
+      const suppressed = Boolean(suppressedCells[`t:${row.hour}:${index}:tap`])
       if (hasFilledValue(value)) {
         tapCarryState[index] = String(value)
         return value
+      }
+
+      if (suppressed) {
+        return ''
       }
 
       return hasFilledValue(tapCarryState[index]) ? tapCarryState[index] : ''
     })
 
     row.transformerTemperatures = row.transformerTemperatures.map((value, index) => {
+      const suppressed = Boolean(suppressedCells[`t:${row.hour}:${index}:temperature`])
       if (hasFilledValue(value)) {
         tempCarryState[index] = String(value)
         return value
       }
 
+      if (suppressed) {
+        return ''
+      }
+
       return hasFilledValue(tempCarryState[index]) ? tempCarryState[index] : ''
+    })
+  })
+
+  return nextRows
+}
+
+function applyAmpKvCarryForwardByEffectiveKwh(rows, config, seed = null, suppressedCells = {}) {
+  const nextRows = rows.map((row) => ({
+    ...row,
+    feederReadings: { ...(row.feederReadings || {}) },
+  }))
+
+  const feederCarryState = Object.fromEntries(
+    config.feeders.map((feeder) => [
+      feeder.id,
+      {
+        amp: hasFilledValue(seed?.feederMetricById?.[feeder.id]?.amp)
+          ? String(seed.feederMetricById[feeder.id].amp)
+          : '',
+        kv: hasFilledValue(seed?.feederMetricById?.[feeder.id]?.kv)
+          ? String(seed.feederMetricById[feeder.id].kv)
+          : '',
+      },
+    ]),
+  )
+
+  nextRows.forEach((row) => {
+    config.feeders.forEach((feeder) => {
+      const reading = row.feederReadings?.[feeder.id] || createBlankFeederReading()
+      const metadata = reading.metadata || {}
+      const hasEffectiveKwhForRow = hasFilledValue(reading.kwh)
+      const ampSuppressed = Boolean(suppressedCells[`f:${row.hour}:${feeder.id}:amp`])
+      const kvSuppressed = Boolean(suppressedCells[`f:${row.hour}:${feeder.id}:kv`])
+
+      const ampCurrent = hasFilledValue(reading.amp) ? String(reading.amp) : ''
+      if (ampCurrent) {
+        feederCarryState[feeder.id].amp = ampCurrent
+      } else if (
+        !ampSuppressed &&
+        hasEffectiveKwhForRow &&
+        hasFilledValue(feederCarryState[feeder.id].amp)
+      ) {
+        reading.amp = feederCarryState[feeder.id].amp
+        reading.metadata = {
+          ...metadata,
+          ampSourceType: 'carry_forward',
+        }
+      } else if (
+        (ampSuppressed || !hasEffectiveKwhForRow) &&
+        metadata.ampSourceType === 'carry_forward'
+      ) {
+        reading.amp = ''
+        reading.metadata = {
+          ...metadata,
+          ampSourceType: '',
+        }
+      }
+
+      const kvCurrent = hasFilledValue(reading.kv) ? String(reading.kv) : ''
+      if (kvCurrent) {
+        feederCarryState[feeder.id].kv = kvCurrent
+      } else if (
+        !kvSuppressed &&
+        hasEffectiveKwhForRow &&
+        hasFilledValue(feederCarryState[feeder.id].kv)
+      ) {
+        reading.kv = feederCarryState[feeder.id].kv
+        reading.metadata = {
+          ...reading.metadata,
+          kvSourceType: 'carry_forward',
+        }
+      } else if (
+        (kvSuppressed || !hasEffectiveKwhForRow) &&
+        (reading.metadata?.kvSourceType || '') === 'carry_forward'
+      ) {
+        reading.kv = ''
+        reading.metadata = {
+          ...reading.metadata,
+          kvSourceType: '',
+        }
+      }
+
+      row.feederReadings[feeder.id] = reading
     })
   })
 
@@ -2104,6 +2218,7 @@ export function deriveDailyLogState(form, config) {
     stripDerivedRows(form?.rows || [], config),
     config,
     form?.carryForwardAutoFillSeed,
+    form?.carryForwardSuppressedCells || {},
   )
   const dayStatus = form?.dayStatus === 'finalized' ? 'finalized' : 'draft'
   const normalizedMeterChangeEvents = (form?.meterChangeEvents || [])
@@ -2165,12 +2280,18 @@ export function deriveDailyLogState(form, config) {
 
   const explicitOverlayMap = buildExplicitOverlayMap(normalizedInterruptions)
   const autoLsState = buildAutoLsState(validatedBaseRows, config, explicitOverlayMap, dayStatus)
+  const resolvedRowsWithEffectiveAmpKv = applyAmpKvCarryForwardByEffectiveKwh(
+    autoLsState.resolvedRows,
+    config,
+    form?.carryForwardAutoFillSeed,
+    form?.carryForwardSuppressedCells || {},
+  )
   const overlayMap = new Map([
     ...autoLsState.autoOverlayMap.entries(),
     ...explicitOverlayMap.entries(),
   ])
 
-  const tableRows = autoLsState.resolvedRows.map((row, rowIndex) => {
+  const tableRows = resolvedRowsWithEffectiveAmpKv.map((row, rowIndex) => {
     const ampMemo = {}
     const ampStates = Object.fromEntries(
       config.feeders.map((feeder) => [
@@ -2204,7 +2325,7 @@ export function deriveDailyLogState(form, config) {
   const feederSummaries = config.feeders.map((feeder) =>
     summarizeFeeder(
       feeder,
-      autoLsState.resolvedRows,
+      resolvedRowsWithEffectiveAmpKv,
       overlayMap,
       config,
       normalizedMeterChangeEvents,
@@ -2304,7 +2425,7 @@ export function deriveDailyLogState(form, config) {
     config,
     dayStatus,
     baseRows: validatedBaseRows,
-    resolvedRows: autoLsState.resolvedRows,
+    resolvedRows: resolvedRowsWithEffectiveAmpKv,
     allInterruptions,
     explicitInterruptions: normalizedInterruptions,
     autoInterruptions: autoLsState.autoInterruptions,

@@ -215,6 +215,7 @@ export default function DailyLogPage() {
     meterChangeEvents: [],
     carryForwardSource: null,
     carryForwardAutoFillSeed: null,
+    carryForwardSuppressedCells: {},
     carryForwardWarning: '',
     dayStatus: 'draft',
   })
@@ -610,6 +611,13 @@ export default function DailyLogPage() {
         ...current,
         dayStatus: 'draft',
         rows: nextRows,
+        carryForwardSuppressedCells:
+          metric === 'amp' || metric === 'kv'
+            ? {
+                ...current.carryForwardSuppressedCells,
+                [`f:${current.rows[rowIndex]?.hour}:${feederId}:${metric}`]: value === '',
+              }
+            : current.carryForwardSuppressedCells,
       }
     })
 
@@ -638,6 +646,10 @@ export default function DailyLogPage() {
             }
           : row,
       ),
+      carryForwardSuppressedCells: {
+        ...current.carryForwardSuppressedCells,
+        [`b:${current.rows[rowIndex]?.hour}:${batteryIndex}:voltage`]: value === '',
+      },
     }))
   }
 
@@ -672,6 +684,10 @@ export default function DailyLogPage() {
               : row.transformerTemperatures,
         }
       }),
+      carryForwardSuppressedCells: {
+        ...current.carryForwardSuppressedCells,
+        [`t:${current.rows[rowIndex]?.hour}:${transformerIndex}:${metric}`]: value === '',
+      },
     }))
   }
 
