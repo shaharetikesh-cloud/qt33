@@ -486,26 +486,39 @@ function applyCarryForwardAutofill(rows, config, seed = null) {
     config.feeders.forEach((feeder) => {
       const reading = row.feederReadings?.[feeder.id] || createBlankFeederReading()
       const metadata = reading.metadata || {}
+      const hasKwhForRow = hasFilledValue(reading.kwh)
 
       const ampCurrent = hasFilledValue(reading.amp) ? String(reading.amp) : ''
       if (ampCurrent) {
         feederCarryState[feeder.id].amp = ampCurrent
-      } else if (hasFilledValue(feederCarryState[feeder.id].amp)) {
+      } else if (hasKwhForRow && hasFilledValue(feederCarryState[feeder.id].amp)) {
         reading.amp = feederCarryState[feeder.id].amp
         reading.metadata = {
           ...metadata,
           ampSourceType: 'carry_forward',
+        }
+      } else if (!hasKwhForRow && metadata.ampSourceType === 'carry_forward') {
+        reading.amp = ''
+        reading.metadata = {
+          ...metadata,
+          ampSourceType: '',
         }
       }
 
       const kvCurrent = hasFilledValue(reading.kv) ? String(reading.kv) : ''
       if (kvCurrent) {
         feederCarryState[feeder.id].kv = kvCurrent
-      } else if (hasFilledValue(feederCarryState[feeder.id].kv)) {
+      } else if (hasKwhForRow && hasFilledValue(feederCarryState[feeder.id].kv)) {
         reading.kv = feederCarryState[feeder.id].kv
         reading.metadata = {
           ...reading.metadata,
           kvSourceType: 'carry_forward',
+        }
+      } else if (!hasKwhForRow && (reading.metadata?.kvSourceType || '') === 'carry_forward') {
+        reading.kv = ''
+        reading.metadata = {
+          ...reading.metadata,
+          kvSourceType: '',
         }
       }
 
