@@ -269,7 +269,7 @@ export default function MonthEndPackPage() {
             section.tables?.length
               ? section.tables.map((table) => ({
                   name: table.title || section.title,
-                  rows: table.rows,
+                  rows: table.workbookRows ?? table.rows,
                 }))
               : [
                   {

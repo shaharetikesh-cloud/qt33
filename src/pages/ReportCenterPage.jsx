@@ -366,12 +366,12 @@ export default function ReportCenterPage() {
             orientation={activeReport.orientation}
             pageSize={activeReport.pageSize}
             jsonData={activeReport}
-            csvRows={activeReport.rows}
+            csvRows={activeReport.exportFlatRows || activeReport.rows}
             workbookSheets={
               activeReport.tables?.length
                 ? activeReport.tables.map((table) => ({
                     name: table.title || activeReport.title,
-                    rows: table.rows,
+                    rows: table.workbookRows ?? table.rows,
                   }))
                 : [{ name: activeReport.title, rows: activeReport.rows }]
             }

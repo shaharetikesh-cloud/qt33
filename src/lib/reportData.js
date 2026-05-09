@@ -1788,7 +1788,116 @@ function buildTable(title, columns, rows, options = {}) {
     className: options.className || 'report-table-compact',
     chunkSize: options.chunkSize || 22,
     footRows: options.footRows || [],
+    headerRows: options.headerRows ?? null,
+    workbookRows: options.workbookRows ?? null,
   }
+}
+
+/** Flat rows for CSV / XLSX (matches Daily Analytics interruption CSV columns). */
+function buildInterruptionAnalyticsFlatExportRows(interruptionRows = [], interruptionFootRows = []) {
+  const mapRow = (row) => ({
+    'Sr.No': row.feederName === 'Total' ? 'Total' : row.srNo,
+    'Feeder Name': row.feederName,
+    'SD No': row.summaryMap.SD.count,
+    'SD Time': row.summaryMap.SD.hours,
+    'LS No': row.summaryMap.LS.count,
+    'LS Time': row.summaryMap.LS.hours,
+    'BD No': row.summaryMap.BD.count,
+    'BD Time': row.summaryMap.BD.hours,
+    'OC No': row.summaryMap.OC.count,
+    'OC Time': row.summaryMap.OC.hours,
+    'EF No': row.summaryMap.EF.count,
+    'EF Time': row.summaryMap.EF.hours,
+    'Total No': row.totalCount,
+    'Total Time': row.totalHours,
+  })
+
+  return [...interruptionRows, ...interruptionFootRows].map(mapRow)
+}
+
+/**
+ * Same derivation path as Daily Feeder Analysis: finalized daily state per record, then concatenated interruptions.
+ */
+function collectFinalizedInterruptionRowsFromDailyLogs(dailyLogRecords, feeders, substation) {
+  const config = buildDailyLogConfiguration({
+    substationId: substation?.id,
+    feeders,
+    batterySets: [],
+    transformers: [],
+  })
+  const accumulated = []
+  for (const record of dailyLogRecords) {
+    const derivedState = deriveDailyLogState(
+      {
+        rows: record?.payload?.manualRows || record?.payload?.rows || [],
+        interruptions: record?.payload?.interruptions || [],
+        meterChangeEvents: record?.payload?.meterChangeEvents || [],
+        dayStatus: 'finalized',
+      },
+      config,
+    )
+    accumulated.push(...derivedState.interruptionRows)
+  }
+  return accumulated
+}
+
+/** Column + grouped header layout aligned with DailyLogAnalyticsReportView Section 1 */
+function buildGroupedMonthlyInterruptionTableParts() {
+  const interruptionFaultTypes = DAILY_ANALYTICS_FAULT_TYPES
+  const columns = [
+    { key: 'srNo', label: 'Sr.No', align: 'center', width: '42px' },
+    { key: 'feederName', label: 'Feeder Name', width: '150px' },
+    ...interruptionFaultTypes.flatMap((faultType) => [
+      {
+        key: `${faultType.toLowerCase()}No`,
+        label: `${faultType} No`,
+        align: 'center',
+        render: (row) => formatInteger(row.summaryMap[faultType].count),
+      },
+      {
+        key: `${faultType.toLowerCase()}Time`,
+        label: `${faultType} Time`,
+        align: 'center',
+        render: (row) => formatNumber(row.summaryMap[faultType].hours),
+      },
+    ]),
+    {
+      key: 'totalCount',
+      label: 'Total No',
+      align: 'center',
+      render: (row) => formatInteger(row.totalCount),
+    },
+    {
+      key: 'totalHours',
+      label: 'Total Time',
+      align: 'center',
+      render: (row) => formatNumber(row.totalHours),
+    },
+  ]
+
+  const headerRows = [
+    [
+      { key: 'srNo-group', label: 'Sr.No', rowSpan: 2, align: 'center' },
+      { key: 'feeder-group', label: 'Feeder Name', rowSpan: 2 },
+      ...interruptionFaultTypes.map((faultType) => ({
+        key: `${faultType}-group`,
+        label: faultType,
+        colSpan: 2,
+        align: 'center',
+      })),
+      { key: 'total-group', label: 'Total', colSpan: 2, align: 'center' },
+    ],
+    [
+      ...interruptionFaultTypes.flatMap((faultType) => [
+        { key: `${faultType}-no`, label: 'No', align: 'center' },
+        { key: `${faultType}-time`, label: 'Time', align: 'center' },
+      ]),
+      { key: 'total-no', label: 'No', align: 'center' },
+      { key: 'total-time', label: 'Time', align: 'center' },
+    ],
+  ]
+
+  return { columns, headerRows }
 }
 
 export function buildMonthlyReports({
@@ -1878,71 +1987,6 @@ export function buildMonthlyReports({
       maxVoltage: Math.max(...rows.map((row) => row.maxVoltage), 0),
     }
   })
-
-  const faultByFeeder = groupBy(
-    faultRecords.map((record) => ({
-      feederId: record.payload?.feederId,
-      feederName: getFeederName(feeders, record.payload?.feederId, record.payload?.feederName || '-'),
-      durationMinutes: getNumericValue(record.payload?.durationMinutes),
-    })),
-    (row) => row.feederId || row.feederName,
-  )
-
-  const derivedInterruptionRows = Object.entries(feederStats).map(([feederKey, rows]) => ({
-    feeder: rows[0]?.feederName || feederKey,
-    interruptions: sum(rows, (row) => row.noOfInterruptions),
-    totalDurationHours: sum(rows, (row) => row.outageHours),
-    totalDurationMinutes: sum(rows, (row) => row.interruptionMinutes),
-    averageDurationMinutes: average(rows, (row) => row.interruptionMinutes),
-  }))
-
-  const monthlyInterruptionMap = new Map()
-
-  ;[...Object.entries(faultByFeeder), ...derivedInterruptionRows.map((row) => [row.feeder, [row]])].forEach(
-    ([key, rows]) => {
-      const feederLabel = rows[0]?.feederName || rows[0]?.feeder || key
-      const current = monthlyInterruptionMap.get(feederLabel) || {
-        feeder: feederLabel,
-        interruptions: 0,
-        totalDurationHours: 0,
-        totalDurationMinutes: 0,
-        averageDurationMinutes: 0,
-        averageDurationHours: 0,
-        sourceStatus: [],
-      }
-
-      const nextInterruptions =
-        current.interruptions +
-        sum(rows, (row) => ('durationMinutes' in row ? 1 : row.interruptions))
-      const nextDuration =
-        current.totalDurationMinutes +
-        sum(rows, (row) =>
-          'durationMinutes' in row ? row.durationMinutes : row.totalDurationMinutes,
-        )
-      const nextDurationHours =
-        current.totalDurationHours +
-        sum(rows, (row) =>
-          'durationMinutes' in row
-            ? row.durationMinutes / 60
-            : row.totalDurationHours,
-        )
-
-      monthlyInterruptionMap.set(feederLabel, {
-        feeder: feederLabel,
-        interruptions: nextInterruptions,
-        totalDurationHours: nextDurationHours,
-        totalDurationMinutes: nextDuration,
-        averageDurationMinutes: nextInterruptions ? nextDuration / nextInterruptions : 0,
-        averageDurationHours: nextInterruptions ? nextDurationHours / nextInterruptions : 0,
-        sourceStatus: current.sourceStatus.concat('durationMinutes' in rows[0] ? 'Fault Register' : 'Daily Log Derived'),
-      })
-    },
-  )
-
-  const monthlyInterruptionRows = [...monthlyInterruptionMap.values()].map((row) => ({
-    ...row,
-    sourceStatus: [...new Set(row.sourceStatus)].join(', '),
-  }))
 
   const energyBalanceRows = feeders
     .filter((feeder) => isMainIncomingFeeder(feeder))
@@ -2290,24 +2334,43 @@ export function buildMonthlyReports({
         ], monthlyMinMaxRows),
       ],
     ),
-    monthlyInterruption: reportBase(
-      'Monthly Interruption Report',
-      monthlyInterruptionRows,
-      [
-        { label: 'Total Interruptions', value: formatInteger(sum(monthlyInterruptionRows, (row) => row.interruptions)) },
-        { label: 'Outage Hours', value: formatNumber(sum(monthlyInterruptionRows, (row) => row.totalDurationHours)) },
-      ],
-      [],
-      [
-        buildTable('Monthly Interruption', [
-          { key: 'feeder', label: 'Feeder' },
-          { key: 'interruptions', label: 'Interruptions', type: 'integer', align: 'right' },
-          { key: 'totalDurationHours', label: 'Total Duration (Hr)', type: 'number', align: 'right' },
-          { key: 'averageDurationHours', label: 'Average Duration (Hr)', type: 'number', align: 'right' },
-          { key: 'sourceStatus', label: 'Source' },
-        ], monthlyInterruptionRows),
-      ],
-    ),
+    monthlyInterruption: (() => {
+      const collectedRawRows = collectFinalizedInterruptionRowsFromDailyLogs(
+        dailyLogRecords,
+        feeders,
+        substation,
+      )
+      const interruptionAnalyticsRows = buildInterruptionAnalytics(collectedRawRows, feeders)
+      const interruptionAnalyticsFootRows = buildInterruptionAnalyticsFootRows(interruptionAnalyticsRows)
+      const groupedParts = buildGroupedMonthlyInterruptionTableParts()
+      const grandTotal = interruptionAnalyticsFootRows[0]
+      const flatExportRows = buildInterruptionAnalyticsFlatExportRows(
+        interruptionAnalyticsRows,
+        interruptionAnalyticsFootRows,
+      )
+
+      return {
+        ...reportBase(
+          'Monthly Interruption Report',
+          interruptionAnalyticsRows,
+          [
+            { label: 'Grand Total No', value: formatInteger(grandTotal?.totalCount ?? 0) },
+            { label: 'Grand Total Time', value: formatNumber(grandTotal?.totalHours ?? 0) },
+          ],
+          [],
+          [
+            buildTable('Monthly Interruption', groupedParts.columns, interruptionAnalyticsRows, {
+              footRows: interruptionAnalyticsFootRows,
+              headerRows: groupedParts.headerRows,
+              className: 'report-table-compact report-grouped-table',
+              chunkSize: 16,
+              workbookRows: flatExportRows,
+            }),
+          ],
+        ),
+        exportFlatRows: flatExportRows,
+      }
+    })(),
     monthlyEnergyBalance: reportBase(
       'Monthly Energy Balance / Loss Report',
       energyBalanceRows,

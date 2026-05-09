@@ -98,6 +98,7 @@ function ReportTableGroup({ tables = [], fallbackRows = [] }) {
             columns={getReportTableColumns(table)}
             rows={table.rows || []}
             footRows={table.footRows || []}
+            headerRows={table.headerRows ?? null}
             className={table.className || 'report-table-compact'}
             chunkSize={table.chunkSize || 22}
           />
