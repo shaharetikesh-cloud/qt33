@@ -1,15 +1,70 @@
+import { isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
+
+const offlineAllowedRoutes = new Set([
+  '/',
+  '/dashboard',
+  '/substations',
+  '/daily-log',
+  '/maintenance',
+  '/history-register',
+  '/feeder-history-account',
+  '/asset-history-account',
+  '/battery',
+  '/faults',
+  '/charge-handover',
+  '/employees',
+  '/report-center',
+  '/month-end-pack',
+  '/masters',
+  '/session',
+])
+
+export function canAccessNavigationItem(item, access) {
+  if (item.moduleKey && !access.canViewModule(item.moduleKey)) {
+    return false
+  }
+
+  if (!item.access) {
+    return true
+  }
+
+  if (item.access === 'main_admin') {
+    return access.isMainAdmin
+  }
+
+  if (item.access === 'user_manager') {
+    return access.canManageUsers
+  }
+
+  return true
+}
+
+export function getVisibleNavigationGroups(access) {
+  return navigationGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (isOfflineLocalSingleUserProfile && !offlineAllowedRoutes.has(item.to)) {
+          return false
+        }
+        return canAccessNavigationItem(item, access)
+      }),
+    }))
+    .filter((group) => group.items.length)
+}
+
 export const navigationGroups = [
   {
     key: 'dashboard',
     label: 'Dashboard',
     items: [
       {
-        to: '/',
-        label: 'Overview',
+        to: '/dashboard',
+        label: 'Dashboard',
         icon: 'overview',
         section: 'Dashboard',
-        pageTitle: 'Overview',
-        breadcrumbs: ['Dashboard', 'Overview'],
+        pageTitle: 'Dashboard',
+        breadcrumbs: ['Dashboard'],
         keywords: ['overview', 'dashboard', 'home'],
       },
     ],
@@ -261,10 +316,37 @@ export const allNavigationItems = [
   })),
 ]
 
-export function findNavigationItem(pathname) {
-  return (
-    allNavigationItems.find((item) => item.to === pathname) ||
-    allNavigationItems.find((item) => pathname.startsWith(`${item.to}/`)) ||
-    allNavigationItems[0]
-  )
+export function findNavigationItem(pathname, options = {}) {
+  const { offlineRootHomeMenu = false } = options
+  const normalized = pathname === '' ? '/' : pathname
+
+  if (offlineRootHomeMenu && normalized === '/') {
+    return {
+      to: '/',
+      label: 'Home',
+      icon: 'overview',
+      section: 'Home',
+      pageTitle: 'QT DLR Offline',
+      breadcrumbs: ['Home'],
+      groupLabel: 'Home',
+      groupKey: 'home',
+    }
+  }
+
+  const exact = allNavigationItems.find((item) => item.to === normalized)
+  if (exact) {
+    return exact
+  }
+
+  const prefix = allNavigationItems.find((item) => normalized.startsWith(`${item.to}/`))
+  if (prefix) {
+    return prefix
+  }
+
+  if (normalized === '/') {
+    const dashboardHome = allNavigationItems.find((item) => item.to === '/dashboard')
+    return dashboardHome || allNavigationItems[0]
+  }
+
+  return allNavigationItems[0]
 }

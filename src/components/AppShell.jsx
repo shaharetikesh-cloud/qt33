@@ -23,7 +23,10 @@ import {
 import AppIcon from './ui/AppIcon'
 import Qt33OffsiteBrand from './ui/Qt33OffsiteBrand'
 import { startRouteLoading } from '../lib/pageLoading'
-import { isOfflineLocalSingleUserProfile } from '../lib/runtimeConfig'
+import {
+  isConnectedLiveMultiUserProfile,
+  isOfflineLocalSingleUserProfile,
+} from '../lib/runtimeConfig'
 import {
   configureRealtimeSync,
   runForceSyncNow,
@@ -71,12 +74,14 @@ export default function AppShell() {
     roleLabel,
   } = useAuth()
 
+  const useLauncherHomeLayout =
+    isOfflineLocalSingleUserProfile || isConnectedLiveMultiUserProfile
   const headerRef = useRef(null)
   const dropdownRef = useRef(null)
   const sidebarBeforeWorkspaceExpandRef = useRef(null)
   const hasCommittedRouteRef = useRef(false)
   const activeItem = findNavigationItem(location.pathname, {
-    offlineRootHomeMenu: isOfflineLocalSingleUserProfile,
+    offlineRootHomeMenu: useLauncherHomeLayout,
   })
   const visibleGroups = useMemo(
     () =>
@@ -151,9 +156,8 @@ export default function AppShell() {
         : 'Health: Live'
 
   const workspaceRouteKey = useMemo(
-    () =>
-      getWorkspaceRouteKey(location.pathname, isOfflineLocalSingleUserProfile),
-    [location.pathname],
+    () => getWorkspaceRouteKey(location.pathname, useLauncherHomeLayout),
+    [location.pathname, useLauncherHomeLayout],
   )
 
   useLayoutEffect(() => {
@@ -492,7 +496,7 @@ export default function AppShell() {
         sidebarCollapsed ? 'app-shell-sidebar-collapsed' : '',
         activeItem?.focusMode ? 'app-shell-focus' : '',
         isWorkspaceExpanded ? 'app-shell-workspace-expanded' : '',
-        isOfflineLocalSingleUserProfile ? 'app-shell-offline-no-sidebar' : '',
+        useLauncherHomeLayout ? 'app-shell-offline-no-sidebar' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -502,14 +506,14 @@ export default function AppShell() {
         ref={headerRef}
         className={[
           'workspace-header',
-          isOfflineLocalSingleUserProfile ? 'workspace-header-offline' : '',
+          useLauncherHomeLayout ? 'workspace-header-offline' : '',
           isCompactViewport ? 'workspace-header-compact' : '',
           isPhoneViewport ? 'workspace-header-phone' : '',
         ]
           .filter(Boolean)
           .join(' ')}
       >
-        {!isOfflineLocalSingleUserProfile ? (
+        {!useLauncherHomeLayout ? (
           <div className="gov-tricolor-strip">
             <span className="gov-strip-saffron" />
             <span className="gov-strip-white" />
@@ -517,7 +521,7 @@ export default function AppShell() {
           </div>
         ) : null}
 
-        {!isCompactViewport && !isOfflineLocalSingleUserProfile ? (
+        {!isCompactViewport && !useLauncherHomeLayout ? (
           <div className="workspace-header-floating-controls">
             <button
               type="button"
@@ -570,7 +574,7 @@ export default function AppShell() {
 
         <div className="workspace-header-inner">
           <div className="workspace-header-left">
-            {!isOfflineLocalSingleUserProfile ? (
+            {!useLauncherHomeLayout ? (
               <button
                 type="button"
                 className="header-icon-button"
@@ -581,7 +585,7 @@ export default function AppShell() {
               </button>
             ) : null}
 
-            {!isOfflineLocalSingleUserProfile ? (
+            {!useLauncherHomeLayout ? (
               <button
                 type="button"
                 className="header-icon-button workspace-theme-toggle"
@@ -603,7 +607,7 @@ export default function AppShell() {
           </div>
 
           <div className="workspace-header-center">
-            {!isOfflineLocalSingleUserProfile ? (
+            {!useLauncherHomeLayout ? (
               <>
                 <p className="workspace-breadcrumbs">
                   {currentBreadcrumbs.map((item, index) => (
@@ -619,7 +623,7 @@ export default function AppShell() {
           </div>
 
           <div className="workspace-header-right">
-            {!isOfflineLocalSingleUserProfile ? (
+            {!useLauncherHomeLayout ? (
               <div ref={dropdownRef} className="workspace-profile-shell">
               <button
                 type="button"
@@ -674,7 +678,7 @@ export default function AppShell() {
               </div>
             ) : null}
 
-            {!isOfflineLocalSingleUserProfile ? (
+            {!useLauncherHomeLayout ? (
               <label className="header-substation-picker" htmlFor="workspace-substation">
               <span>Substation</span>
               {isCompactViewport ? (
@@ -735,7 +739,7 @@ export default function AppShell() {
         </div>
       </header>
 
-      {!isOfflineLocalSingleUserProfile ? (
+      {!useLauncherHomeLayout ? (
         <button
           type="button"
           className={[
@@ -755,7 +759,7 @@ export default function AppShell() {
       ) : null}
 
       <div className="workspace-body">
-        {!isOfflineLocalSingleUserProfile ? (
+        {!useLauncherHomeLayout ? (
         <aside className="sidebar workspace-sidebar" aria-label="Primary navigation">
           <nav className="workspace-nav">
             {visibleGroups.map((group) => (
